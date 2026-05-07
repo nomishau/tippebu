@@ -723,17 +723,23 @@ function setSyncStatus(state, label) {
 
 async function loadData() {
   try {
-    const { data, error } = await sb.from('app_state').select('data').eq('id', APP_STATE_ID).single();
+    const { data, error } = await sb.from('app_state').select('data, updated_at').eq('id', APP_STATE_ID).single();
     if (error) throw error;
     if (data && data.data && data.data.weeks && Array.isArray(data.data.weeks) && data.data.weeks.length > 0) {
       DATA = data.data;
+      lastPushedAt = data.updated_at || null;
       cloudConnected = true;
       return;
     }
     // Empty row — push the embedded Excel data as the initial state
     DATA = JSON.parse(document.getElementById('initial-data').textContent);
-    const { error: pushErr } = await sb.from('app_state').update({ data: DATA }).eq('id', APP_STATE_ID);
+    const { data: upd, error: pushErr } = await sb.from('app_state')
+      .update({ data: DATA, updated_at: new Date().toISOString() })
+      .eq('id', APP_STATE_ID)
+      .select('updated_at')
+      .single();
     if (pushErr) throw pushErr;
+    if (upd && upd.updated_at) lastPushedAt = upd.updated_at;
     cloudConnected = true;
   } catch (e) {
     console.error('Could not load from Supabase, using embedded data:', e);
@@ -745,6 +751,8 @@ async function loadData() {
 let syncTimer = null;
 let syncing = false;
 let pendingSync = false;
+let lastPushedAt = null;
+let liveChannel = null;
 
 function saveData() {
   document.getElementById('last-update').textContent = new Date().toLocaleString('nb-NO');
@@ -759,8 +767,13 @@ async function pushToCloud() {
   pendingSync = false;
   setSyncStatus('pending', 'Synker…');
   try {
-    const { error } = await sb.from('app_state').update({ data: DATA }).eq('id', APP_STATE_ID);
+    const { data, error } = await sb.from('app_state')
+      .update({ data: DATA, updated_at: new Date().toISOString() })
+      .eq('id', APP_STATE_ID)
+      .select('updated_at')
+      .single();
     if (error) throw error;
+    if (data && data.updated_at) lastPushedAt = data.updated_at;
     cloudConnected = true;
     setSyncStatus('ok', 'Lagret i sky');
   } catch (e) {
@@ -773,6 +786,42 @@ async function pushToCloud() {
     syncing = false;
   }
   if (pendingSync) pushToCloud();
+}
+
+function handleRealtimeUpdate(row) {
+  if (!row || !row.data) return;
+  // Skip echoes of our own writes
+  if (lastPushedAt && row.updated_at === lastPushedAt) return;
+  try {
+    DATA = row.data;
+    restoreHistoricFromExcel();
+    recomputeRunningTotals();
+    setSyncStatus('ok', 'Oppdatert fra annen bruker');
+    document.getElementById('last-update').textContent = new Date().toLocaleString('nb-NO');
+    refreshAll();
+    toast('Oppdatert fra annen bruker');
+  } catch (e) {
+    console.error('Realtime update failed:', e);
+  }
+}
+
+function subscribeToLiveUpdates() {
+  if (liveChannel) return;
+  liveChannel = sb.channel('app-state-changes')
+    .on('postgres_changes', {
+      event: 'UPDATE',
+      schema: 'public',
+      table: 'app_state',
+      filter: `id=eq.${APP_STATE_ID}`,
+    }, (payload) => handleRealtimeUpdate(payload.new))
+    .subscribe();
+}
+
+function unsubscribeFromLiveUpdates() {
+  if (liveChannel) {
+    try { sb.removeChannel(liveChannel); } catch (e) { console.warn(e); }
+    liveChannel = null;
+  }
 }
 
 async function resetData() {
@@ -956,13 +1005,16 @@ async function bootstrapForSession(session) {
   populateSeasonScope();
   applyRoleGates();
   renderDashboard();
+  if (cloudConnected) subscribeToLiveUpdates();
   document.getElementById('loading-overlay').style.display = 'none';
 }
 
 async function logout() {
+  unsubscribeFromLiveUpdates();
   try { await sb.auth.signOut(); } catch (e) { console.warn(e); }
   currentRole = null;
   currentUsername = null;
+  lastPushedAt = null;
   showLogin('');
 }
 

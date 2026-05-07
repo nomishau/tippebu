@@ -199,6 +199,77 @@ footer { text-align: center; padding: 2rem; color: var(--text-dim); font-size: 0
 .user-badge .role.admin { color: var(--accent-2); }
 .user-badge .role.viewer { color: var(--accent); }
 .header-actions { display: flex; align-items: center; gap: 0.5rem; flex-wrap: wrap; }
+
+/* ----- Mobile (≤640px) ----- */
+@media (max-width: 640px) {
+  header { padding: 0.5rem 0.75rem; }
+  .header-inner { flex-direction: column; align-items: stretch; gap: 0.5rem; }
+  h1 { font-size: 1.1rem; }
+
+  /* Single-row scrollable nav so it stops eating half the screen */
+  nav {
+    flex-wrap: nowrap;
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+    scrollbar-width: none;
+    padding: 0.15rem 0;
+    margin: 0 -0.25rem;
+    mask-image: linear-gradient(to right, transparent 0, #000 1rem, #000 calc(100% - 1rem), transparent 100%);
+  }
+  nav::-webkit-scrollbar { display: none; }
+  nav button {
+    flex-shrink: 0;
+    padding: 0.4rem 0.75rem;
+    font-size: 0.85rem;
+  }
+
+  .header-actions { justify-content: space-between; }
+  .user-badge { font-size: 0.75rem; padding: 0.25rem 0.5rem; }
+
+  /* Tighter content */
+  main { padding: 0.75rem; }
+  h2 { font-size: 1.2rem; margin-bottom: 0.75rem; }
+  h3 { font-size: 1rem; }
+
+  .card { padding: 0.85rem; margin-bottom: 0.85rem; border-radius: 10px; }
+  .card-row { gap: 0.85rem; }
+
+  /* KPIs: 2 per row instead of one giant per row */
+  .kpi-grid { grid-template-columns: repeat(2, 1fr); gap: 0.6rem; margin-bottom: 1rem; }
+  .kpi { padding: 0.7rem; }
+  .kpi .label { font-size: 0.65rem; margin-bottom: 0.2rem; }
+  .kpi .value { font-size: 1.15rem; }
+  .kpi .sub { font-size: 0.7rem; }
+
+  /* Podium more compact */
+  .podium { gap: 0.5rem; }
+  .podium-card { padding: 0.6rem 0.4rem; }
+  .podium-card .medal { font-size: 1.4rem; }
+  .podium-card .name { font-size: 0.9rem; margin: 0.25rem 0 0.1rem; }
+  .podium-card .amount { font-size: 1rem; }
+  .podium-card .meta { font-size: 0.7rem; }
+
+  /* Tables — smaller cells, scroll horizontally if needed */
+  table { font-size: 0.8rem; }
+  th, td { padding: 0.4rem 0.4rem; }
+  th { font-size: 0.7rem; }
+
+  /* Controls stack full-width */
+  .controls { flex-direction: column; align-items: stretch; gap: 0.5rem; }
+  .controls > input, .controls > select, .controls > button { width: 100%; }
+
+  /* Charts shorter */
+  .chart-wrap { height: 280px; }
+  .chart-wrap.tall { height: 340px; }
+
+  /* Footer / modal slim */
+  footer { padding: 1rem 0.75rem; font-size: 0.75rem; margin-top: 1.5rem; }
+  .modal { padding: 1rem; }
+
+  /* More tappable buttons */
+  button.btn { padding: 0.55rem 0.9rem; }
+  button.btn.small { padding: 0.4rem 0.6rem; font-size: 0.8rem; }
+}
 </style>
 </head>
 <body>

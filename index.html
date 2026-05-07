@@ -1397,19 +1397,24 @@ function drawPaymentsMatrix() {
 
   let weeks = DATA.weeks.map((w, i) => ({...w, idx: i}));
   if (view === 'recent') {
-    // 7 weeks back from last settled + 5 synthetic future weeks based on rotation
+    // 7 weeks back from last settled + up to 5 future weeks (real planlagte first, then synthetic)
     let lastSettledIdx = -1;
     for (let i = weeks.length - 1; i >= 0; i--) {
       if (SETTLED(weeks[i])) { lastSettledIdx = i; break; }
     }
     if (lastSettledIdx < 0) lastSettledIdx = weeks.length - 1;
     const startSlice = Math.max(0, lastSettledIdx - 7);
-    weeks = weeks.slice(startSlice, lastSettledIdx + 1);
-    // Append synthetic future rows (read-only preview)
-    const upcoming = getNextWeeks(5);
-    upcoming.forEach(u => {
-      weeks.push({ year: u.year, uke: u.uke, tipper: u.tipper, paid: null, idx: null, _synthetic: true });
-    });
+    const historyChunk = weeks.slice(startSlice, lastSettledIdx + 1);
+    const realPlanlagtChunk = weeks.slice(lastSettledIdx + 1).slice(0, 5);
+    weeks = historyChunk.concat(realPlanlagtChunk);
+    // Top up with synthetic preview rows so we always show ~5 future slots
+    const futureCount = Math.max(0, 5 - realPlanlagtChunk.length);
+    if (futureCount > 0) {
+      const upcoming = getNextWeeks(realPlanlagtChunk.length + futureCount).slice(realPlanlagtChunk.length);
+      upcoming.forEach(u => {
+        weeks.push({ year: u.year, uke: u.uke, tipper: u.tipper, paid: null, idx: null, _synthetic: true });
+      });
+    }
   } else if (view === 'year') {
     if (yearFilter) weeks = weeks.filter(w => String(w.year) === yearFilter);
   } else if (view === 'unpaid') {
@@ -1434,8 +1439,8 @@ function drawPaymentsMatrix() {
   const tbody = document.getElementById('payments-tbody');
   tbody.innerHTML = weeks.map(w => {
     if (w._synthetic) {
-      const futureCells = players.map(_ => `<td class="center muted" style="opacity:0.4;">·</td>`).join('');
-      return `<tr style="opacity:0.65; background:rgba(56,189,248,0.04);">
+      const futureCells = players.map(p => `<td class="center" style="cursor:pointer; color:var(--text-dim); opacity:0.55;" title="Klikk for å registrere betaling for denne uken" onclick="materializeAndPay(${w.year}, ${typeof w.uke === 'number' ? w.uke : `'${w.uke}'`}, '${p}')">·</td>`).join('');
+      return `<tr style="background:rgba(56,189,248,0.04);">
         <td><strong>${w.year}</strong></td>
         <td><strong>${w.uke}</strong></td>
         <td>${w.tipper || '—'} <span class="tag" style="font-size:0.7rem;">planlagt</span></td>
@@ -1477,6 +1482,41 @@ function togglePaid(idx, player) {
   saveData();
   drawPaymentsMatrix();
   drawPaymentsKpisAndStats();
+}
+
+function materializeAndPay(year, uke, player) {
+  if (!requireAdmin()) return;
+  // If a real entry for this week already exists, just toggle on it
+  const existingIdx = DATA.weeks.findIndex(w => w.year === year && w.uke === uke);
+  if (existingIdx >= 0) {
+    togglePaid(existingIdx, player);
+    return;
+  }
+  // Materialize a new planlagt week (gevinst=0 → not settled, not in stats yet)
+  const upcoming = getNextWeeks(20);
+  const found = upcoming.find(u => u.year === year && u.uke === uke);
+  const tipper = found ? found.tipper : null;
+  const baseRoster = activePlayersAtWeek(DATA.weeks.length - 1);
+  const paid = {};
+  baseRoster.forEach(p => paid[p] = false);
+  paid[player] = true;
+  DATA.weeks.push({
+    year, uke, tipper,
+    gevinst: 0, kommentar: null,
+    paid,
+    ukepot: 0, sumTapGev: null, pengerIBua: null, sumInnbetalt: null,
+  });
+  DATA.weeks.sort((a, b) => {
+    if (a.year !== b.year) return a.year - b.year;
+    const an = typeof a.uke === 'number' ? a.uke : 100;
+    const bn = typeof b.uke === 'number' ? b.uke : 100;
+    return an - bn;
+  });
+  recomputeRunningTotals();
+  saveData();
+  drawPaymentsMatrix();
+  drawPaymentsKpisAndStats();
+  toast(`Uke ${uke}/${year} opprettet som planlagt`);
 }
 
 document.getElementById('payments-year').addEventListener('change', () => {

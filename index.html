@@ -159,6 +159,26 @@ textarea { min-height: 60px; resize: vertical; }
 
 .next-up { background: linear-gradient(135deg, rgba(56,189,248,0.1), rgba(251,191,36,0.1)); border-color: var(--accent); }
 
+/* Tippekupong table */
+.coupon-table { width: 100%; border-collapse: collapse; font-size: 0.85rem; }
+.coupon-table th, .coupon-table td { padding: 0.45rem 0.5rem; border-bottom: 1px solid var(--border); vertical-align: middle; }
+.coupon-table th { color: var(--text-dim); font-weight: 600; font-size: 0.72rem; text-transform: uppercase; letter-spacing: 0.04em; text-align: center; }
+.coupon-table th.match-col { text-align: left; }
+.coupon-table .match-name { font-weight: 600; }
+.coupon-table .match-league { color: var(--text-dim); font-size: 0.75rem; margin-top: 0.1rem; }
+.coupon-table .pct-cell { text-align: center; font-variant-numeric: tabular-nums; padding: 0.3rem 0.4rem; }
+.coupon-table .pct-cell.top { background: rgba(56,189,248,0.18); color: var(--accent); font-weight: 700; border-radius: 4px; }
+.coupon-table .pct-cell.expert-top { background: rgba(251,191,36,0.18); color: var(--gold); font-weight: 700; border-radius: 4px; }
+.coupon-table .value-marker { display: inline-block; padding: 0.1rem 0.35rem; border-radius: 4px; font-size: 0.7rem; font-weight: 600; background: rgba(74,222,128,0.18); color: var(--green); margin-left: 0.3rem; }
+.coupon-table tr:hover td { background: rgba(56,189,248,0.04); }
+.coupon-legend { font-size: 0.78rem; color: var(--text-dim); margin-top: 0.6rem; line-height: 1.5; }
+.coupon-legend .swatch { display: inline-block; width: 0.7rem; height: 0.7rem; border-radius: 2px; vertical-align: middle; margin-right: 0.25rem; }
+@media (max-width: 640px) {
+  .coupon-table { font-size: 0.75rem; }
+  .coupon-table th, .coupon-table td { padding: 0.3rem 0.25rem; }
+  .coupon-table .match-league { font-size: 0.68rem; }
+}
+
 .muted { color: var(--text-dim); }
 .right { text-align: right; }
 .center { text-align: center; }
@@ -332,6 +352,17 @@ footer { text-align: center; padding: 2rem; color: var(--text-dim); font-size: 0
   <div class="card next-up" id="next-up-card">
     <h3>🎯 Neste uke</h3>
     <div id="next-up-content"></div>
+  </div>
+
+  <div class="card" id="coupon-card">
+    <div class="flex-between mb-1">
+      <h3>🎟 Tippekupongen</h3>
+      <div class="flex" style="gap:0.4rem;">
+        <span class="muted" id="coupon-meta" style="font-size:0.85rem;"></span>
+        <button class="btn small secondary" id="coupon-refresh" title="Hent på nytt">↻</button>
+      </div>
+    </div>
+    <div id="coupon-content"><div class="muted">Laster kupong fra Norsk Tipping…</div></div>
   </div>
 
   <div class="card-row">
@@ -1075,6 +1106,160 @@ document.querySelectorAll('#main-nav button').forEach(b => {
   b.addEventListener('click', () => goTab(b.dataset.tab));
 });
 
+// ---------- Tippekupong (Norsk Tipping) ----------
+const COUPON_URL = 'https://api.norsk-tipping.no/PoolGamesSportInfo/v1/api/tipping/live-info';
+const COUPON_CACHE_KEY = 'tippekupong-cache';
+const COUPON_CACHE_TTL_MS = 15 * 60 * 1000; // 15 min
+let couponLoading = false;
+
+function loadCouponCache() {
+  try {
+    const raw = localStorage.getItem(COUPON_CACHE_KEY);
+    if (!raw) return null;
+    const obj = JSON.parse(raw);
+    if (!obj.ts || (Date.now() - obj.ts) > COUPON_CACHE_TTL_MS) return null;
+    return obj;
+  } catch (e) { return null; }
+}
+
+function saveCouponCache(data) {
+  try { localStorage.setItem(COUPON_CACHE_KEY, JSON.stringify({ ts: Date.now(), data })); }
+  catch (e) {}
+}
+
+async function fetchCoupon(force = false) {
+  if (!force) {
+    const cached = loadCouponCache();
+    if (cached) return cached.data;
+  }
+  const res = await fetch(COUPON_URL, { method: 'GET', mode: 'cors' });
+  if (!res.ok) throw new Error('HTTP ' + res.status);
+  const data = await res.json();
+  saveCouponCache(data);
+  return data;
+}
+
+function renderCoupon(force = false) {
+  const card = document.getElementById('coupon-card');
+  if (!card) return;
+  const content = document.getElementById('coupon-content');
+  const meta = document.getElementById('coupon-meta');
+  if (couponLoading) return;
+  couponLoading = true;
+  if (!force) content.innerHTML = '<div class="muted">Laster kupong fra Norsk Tipping…</div>';
+  else content.innerHTML = '<div class="muted">Henter på nytt…</div>';
+
+  fetchCoupon(force).then(data => {
+    couponLoading = false;
+    drawCoupon(data);
+  }).catch(err => {
+    couponLoading = false;
+    console.warn('Coupon fetch failed:', err);
+    content.innerHTML = `
+      <div class="muted">
+        Kunne ikke hente kupongen direkte fra Norsk Tipping
+        ${err && err.message ? `(${htmlEsc(err.message)})` : ''}.
+        Dette skyldes sannsynligvis CORS-blokkering i nettleseren.
+        Vi kan løse det via en liten proxy — gi beskjed så setter vi det opp.
+      </div>`;
+    meta.textContent = '';
+  });
+}
+
+function drawCoupon(data) {
+  const content = document.getElementById('coupon-content');
+  const meta = document.getElementById('coupon-meta');
+  if (!data || !data.gameDays || !data.gameDays.length) {
+    content.innerHTML = '<div class="muted">Ingen aktiv kupong tilgjengelig akkurat nå.</div>';
+    meta.textContent = '';
+    return;
+  }
+  // Pick first OPEN game day, otherwise first
+  const day = data.gameDays.find(g => (g.status || '').toUpperCase() === 'OPENED') || data.gameDays[0];
+  const matches = day.matches || [];
+  const expert = (day.tips && day.tips.fullTime && day.tips.fullTime.expert) || [];
+  const peoples = (day.tips && day.tips.fullTime && day.tips.fullTime.peoples) || [];
+
+  // Header meta
+  const stop = day.sales && day.sales.saleStopDate ? new Date(day.sales.saleStopDate) : null;
+  const stopStr = stop ? stop.toLocaleString('nb-NO', { weekday: 'short', day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' }) : '—';
+  const dayType = day.dayType ? day.dayType.toLowerCase() : '';
+  const status = (day.status || '').toUpperCase();
+  const statusTag = status === 'OPENED' ? '<span class="tag green">åpen</span>' : (status === 'CLOSED' ? '<span class="tag red">stengt</span>' : `<span class="tag">${status}</span>`);
+  meta.innerHTML = `${statusTag} · ${dayType ? `<span class="tag">${dayType}</span> · ` : ''}salgsstopp ${stopStr}`;
+
+  // Build table
+  const rows = matches.map((m, i) => {
+    const e = expert[i] || {};
+    const p = peoples[i] || {};
+    const eVals = [e.home || 0, e.draw || 0, e.away || 0];
+    const pVals = [p.home || 0, p.draw || 0, p.away || 0];
+    const eTopIdx = eVals.indexOf(Math.max(...eVals));
+    const pTopIdx = pVals.indexOf(Math.max(...pVals));
+
+    // Value marker: expert and people disagree on top pick
+    const valueTag = (eTopIdx !== pTopIdx && Math.max(...eVals) >= 40)
+      ? '<span class="value-marker" title="Ekspert og folket er uenige — potensiell value">value</span>'
+      : '';
+
+    const home = (m.teams && m.teams.home && (m.teams.home.shortName || m.teams.home.name)) || (m.name || '').split(' - ')[0] || '?';
+    const away = (m.teams && m.teams.away && (m.teams.away.shortName || m.teams.away.name)) || (m.name || '').split(' - ')[1] || '?';
+    const league = (m.arrangement && m.arrangement.name) || '';
+    const koDate = m.date ? new Date(m.date) : null;
+    const ko = koDate ? koDate.toLocaleString('nb-NO', { weekday: 'short', day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' }) : '';
+
+    const fmtPct = (v, top, kind) => {
+      const cls = top ? (kind === 'expert' ? 'pct-cell expert-top' : 'pct-cell top') : 'pct-cell';
+      return `<td class="${cls}">${Math.round(v)}%</td>`;
+    };
+
+    return `
+      <tr>
+        <td class="match-col" style="text-align:left;">
+          <div class="match-name">${i+1}. ${htmlEsc(home)} – ${htmlEsc(away)} ${valueTag}</div>
+          <div class="match-league">${htmlEsc(league)}${ko ? ` · ${ko}` : ''}</div>
+        </td>
+        ${fmtPct(eVals[0], eTopIdx===0, 'expert')}
+        ${fmtPct(eVals[1], eTopIdx===1, 'expert')}
+        ${fmtPct(eVals[2], eTopIdx===2, 'expert')}
+        ${fmtPct(pVals[0], pTopIdx===0, 'people')}
+        ${fmtPct(pVals[1], pTopIdx===1, 'people')}
+        ${fmtPct(pVals[2], pTopIdx===2, 'people')}
+      </tr>
+    `;
+  }).join('');
+
+  content.innerHTML = `
+    <div style="overflow-x:auto;">
+      <table class="coupon-table">
+        <thead>
+          <tr>
+            <th class="match-col" rowspan="2">Kamp</th>
+            <th colspan="3" style="border-bottom:1px solid var(--border);">Ekspert</th>
+            <th colspan="3" style="border-bottom:1px solid var(--border);">Folket</th>
+          </tr>
+          <tr>
+            <th>H</th><th>U</th><th>B</th>
+            <th>H</th><th>U</th><th>B</th>
+          </tr>
+        </thead>
+        <tbody>${rows}</tbody>
+      </table>
+    </div>
+    <div class="coupon-legend">
+      <span class="swatch" style="background:rgba(251,191,36,0.4);"></span>Eksperten sin favoritt
+      &nbsp;·&nbsp;
+      <span class="swatch" style="background:rgba(56,189,248,0.4);"></span>Folket sin favoritt
+      &nbsp;·&nbsp;
+      <span class="value-marker" style="margin:0;">value</span> = ekspert og folket er uenige (potensiell value)
+    </div>
+  `;
+}
+
+document.addEventListener('click', e => {
+  if (e.target && e.target.id === 'coupon-refresh') renderCoupon(true);
+});
+
 // ---------- Dashboard ----------
 function renderDashboard() {
   const settled = settledWeeks();
@@ -1161,6 +1346,7 @@ function renderDashboard() {
   renderWeeklyYearFilter('weekly-year-filter-dash');
   drawWeeklyComboChart('chart-weekly-combo-dash');
   drawCumulativeChart('chart-cumulative-dash', 200);
+  renderCoupon(false);
 }
 
 function standings(weeksSubset) {

@@ -325,6 +325,7 @@ footer { text-align: center; padding: 2rem; color: var(--text-dim); font-size: 0
     <h1><span class="emoji">⚽</span> Tippelag Stats</h1>
     <nav id="main-nav">
       <button data-tab="dashboard" class="active">Dashboard</button>
+      <button data-tab="odds">Tips & odds</button>
       <button data-tab="weekly">Ukentlig logg</button>
       <button data-tab="add">Ny uke</button>
       <button data-tab="payments">Innbetaling</button>
@@ -354,24 +355,6 @@ footer { text-align: center; padding: 2rem; color: var(--text-dim); font-size: 0
     <div id="next-up-content"></div>
   </div>
 
-  <div class="card" id="coupon-card">
-    <div class="flex-between mb-1">
-      <h3>⚽ Kommende kamper (Oddsen)</h3>
-      <div class="flex" style="gap:0.4rem;">
-        <select id="coupon-sport" class="btn small secondary" style="padding:0.3rem 0.5rem;">
-          <option value="FBL">Fotball</option>
-          <option value="HBL">Håndball</option>
-          <option value="HKY">Ishockey</option>
-          <option value="BSK">Basket</option>
-          <option value="TEN">Tennis</option>
-        </select>
-        <span class="muted" id="coupon-meta" style="font-size:0.85rem;"></span>
-        <button class="btn small secondary" id="coupon-refresh" title="Hent på nytt">↻</button>
-      </div>
-    </div>
-    <div id="coupon-content"><div class="muted">Laster kamper fra Norsk Tipping…</div></div>
-  </div>
-
   <div class="card-row">
     <div class="card">
       <h3>🏆 Årets ledere</h3>
@@ -394,6 +377,42 @@ footer { text-align: center; padding: 2rem; color: var(--text-dim); font-size: 0
   <div class="card">
     <h3>📈 Akkumulert gevinst per spiller</h3>
     <div class="chart-wrap"><canvas id="chart-cumulative-dash"></canvas></div>
+  </div>
+</section>
+
+<!-- ODDS & TIPS -->
+<section id="tab-odds">
+  <h2>Tips & odds</h2>
+
+  <div class="card" id="coupon-card">
+    <div class="flex-between mb-1">
+      <h3>⚽ Tippekupongen</h3>
+      <div class="flex" style="gap:0.4rem;">
+        <select id="coupon-day" class="btn small secondary" style="padding:0.3rem 0.5rem;"></select>
+        <span class="muted" id="coupon-meta" style="font-size:0.85rem;"></span>
+        <button class="btn small secondary" id="coupon-refresh" title="Hent på nytt">↻</button>
+      </div>
+    </div>
+    <div id="coupon-content"><div class="muted">Laster kupong fra Norsk Tipping…</div></div>
+  </div>
+
+  <div class="card" id="picks-card">
+    <div class="flex-between mb-1">
+      <h3>🎯 Anbefalte tips</h3>
+      <span class="muted" id="picks-meta" style="font-size:0.85rem;"></span>
+    </div>
+    <div id="picks-content"><div class="muted">Vent på Tippekupongen…</div></div>
+  </div>
+
+  <div class="card" id="leagues-card">
+    <div class="flex-between mb-1">
+      <h3>🏆 Ligakamper denne uken</h3>
+      <div class="flex" style="gap:0.4rem;">
+        <span class="muted" id="leagues-meta" style="font-size:0.85rem;"></span>
+        <button class="btn small secondary" id="leagues-refresh" title="Hent på nytt">↻</button>
+      </div>
+    </div>
+    <div id="leagues-content"><div class="muted">Laster ligakamper fra Norsk Tipping…</div></div>
   </div>
 </section>
 
@@ -977,7 +996,7 @@ function recomputeRunningTotals() {
 
 // ---------- Auth (Supabase) ----------
 const USERNAME_DOMAIN = '@tippelag.local';
-const VIEWER_TABS = ['dashboard','leaderboard','personal','charts','seasons'];
+const VIEWER_TABS = ['dashboard','odds','leaderboard','personal','charts','seasons'];
 let currentRole = null;
 let currentUsername = null;
 
@@ -1097,6 +1116,7 @@ function goTab(tab) {
   document.getElementById('tab-' + tab).classList.add('active');
   document.querySelector(`nav button[data-tab="${tab}"]`).classList.add('active');
   if (tab === 'dashboard') renderDashboard();
+  if (tab === 'odds') renderOdds();
   if (tab === 'weekly') renderWeekly();
   if (tab === 'add') prepareAddForm();
   if (tab === 'payments') renderPayments();
@@ -1113,23 +1133,29 @@ document.querySelectorAll('#main-nav button').forEach(b => {
   b.addEventListener('click', () => goTab(b.dataset.tab));
 });
 
-// ---------- Oddsen (Norsk Tipping) ----------
-const ODDSEN_BASE = 'https://api.norsk-tipping.no/OddsenGameInfo/v1/api/events';
-const COUPON_CACHE_PREFIX = 'oddsen-cache-';
+// ---------- Tippekupongen (Norsk Tipping) ----------
+const COUPON_URL = 'https://api.norsk-tipping.no/PoolGamesSportInfo/v1/api/tipping/live-info';
+const COUPON_CACHE_KEY = 'tippekupong-cache';
 const COUPON_CACHE_TTL_MS = 15 * 60 * 1000; // 15 min
 let couponLoading = false;
-let oddsenSport = 'FBL';
+let couponData = null;
+let couponSelectedDay = null;
+let couponOddsIndex = null;
 
-function couponUrl() {
-  const today = new Date();
-  const end = new Date(today.getTime() + 7 * 86400000);
-  const fmt = d => d.toISOString().slice(0, 10);
-  return `${ODDSEN_BASE}/${oddsenSport}/${fmt(today)}/${fmt(end)}`;
-}
+const DAY_LABELS = {
+  SATURDAY: 'Lørdagskupongen',
+  SUNDAY: 'Søndagskupongen',
+  MIDWEEK: 'Midtukekupongen',
+  WEDNESDAY: 'Onsdagskupongen',
+  TUESDAY: 'Tirsdagskupongen',
+  THURSDAY: 'Torsdagskupongen',
+  FRIDAY: 'Fredagskupongen',
+  MONDAY: 'Mandagskupongen',
+};
 
 function loadCouponCache() {
   try {
-    const raw = localStorage.getItem(COUPON_CACHE_PREFIX + oddsenSport);
+    const raw = localStorage.getItem(COUPON_CACHE_KEY);
     if (!raw) return null;
     const obj = JSON.parse(raw);
     if (!obj.ts || (Date.now() - obj.ts) > COUPON_CACHE_TTL_MS) return null;
@@ -1138,7 +1164,7 @@ function loadCouponCache() {
 }
 
 function saveCouponCache(data) {
-  try { localStorage.setItem(COUPON_CACHE_PREFIX + oddsenSport, JSON.stringify({ ts: Date.now(), data })); }
+  try { localStorage.setItem(COUPON_CACHE_KEY, JSON.stringify({ ts: Date.now(), data })); }
   catch (e) {}
 }
 
@@ -1147,7 +1173,11 @@ async function fetchCoupon(force = false) {
     const cached = loadCouponCache();
     if (cached) return cached.data;
   }
-  const res = await fetch(couponUrl(), { method: 'GET', mode: 'cors' });
+  const res = await fetch(COUPON_URL, {
+    method: 'GET',
+    mode: 'cors',
+    headers: { 'Accept': 'application/json' },
+  });
   if (!res.ok) throw new Error('HTTP ' + res.status);
   const data = await res.json();
   saveCouponCache(data);
@@ -1161,18 +1191,20 @@ function renderCoupon(force = false) {
   const meta = document.getElementById('coupon-meta');
   if (couponLoading) return;
   couponLoading = true;
-  content.innerHTML = '<div class="muted">' + (force ? 'Henter på nytt…' : 'Laster kamper fra Norsk Tipping…') + '</div>';
+  content.innerHTML = '<div class="muted">' + (force ? 'Henter på nytt…' : 'Laster kupong fra Norsk Tipping…') + '</div>';
   meta.textContent = '';
 
   fetchCoupon(force).then(data => {
     couponLoading = false;
-    drawCoupon(data);
+    couponData = data;
+    populateDaySelector(data);
+    drawCoupon();
   }).catch(err => {
     couponLoading = false;
-    console.warn('Oddsen fetch failed:', err);
+    console.warn('Tippekupong fetch failed:', err);
     content.innerHTML = `
       <div class="muted">
-        Kunne ikke hente kamper fra Norsk Tipping
+        Kunne ikke hente Tippekupongen fra Norsk Tipping
         ${err && err.message ? `(${htmlEsc(err.message)})` : ''}.
         Dette skyldes sannsynligvis CORS-blokkering i nettleseren.
         Vi kan løse det via en liten proxy — gi beskjed så setter vi det opp.
@@ -1181,80 +1213,109 @@ function renderCoupon(force = false) {
   });
 }
 
-// Decimal odds → implied probability, normalized for overround
-function impliedProbs(odds) {
-  const inv = odds.map(o => (o > 0 ? 1 / o : 0));
-  const sum = inv.reduce((s, x) => s + x, 0);
-  if (sum <= 0) return odds.map(() => 0);
-  return inv.map(x => (x / sum) * 100);
+function populateDaySelector(data) {
+  const sel = document.getElementById('coupon-day');
+  if (!sel) return;
+  const days = (data && data.gameDays) || [];
+  const prev = couponSelectedDay;
+  sel.innerHTML = days.map(d => {
+    const label = DAY_LABELS[d.dayType] || d.dayType;
+    return `<option value="${htmlEsc(d.dayType)}">${htmlEsc(label)}</option>`;
+  }).join('');
+  // Pick first day that hasn't started yet, or first overall
+  let pick = days.find(d => d.dayType === prev);
+  if (!pick) {
+    const now = Date.now();
+    pick = days.find(d => {
+      const stop = d.sales && d.sales.saleStopDate ? new Date(d.sales.saleStopDate).getTime() : 0;
+      return stop > now;
+    }) || days[0];
+  }
+  if (pick) {
+    couponSelectedDay = pick.dayType;
+    sel.value = pick.dayType;
+  }
 }
 
-function drawCoupon(data) {
+function drawCoupon() {
   const content = document.getElementById('coupon-content');
   const meta = document.getElementById('coupon-meta');
-  const events = (data && data.eventList) || [];
-  if (!events.length) {
-    content.innerHTML = '<div class="muted">Ingen kommende kamper for denne sporten akkurat nå.</div>';
+  const days = (couponData && couponData.gameDays) || [];
+  if (!days.length) {
+    content.innerHTML = '<div class="muted">Ingen kuponger tilgjengelig akkurat nå.</div>';
     meta.textContent = '';
     return;
   }
+  const day = days.find(d => d.dayType === couponSelectedDay) || days[0];
+  const game = day.game || {};
+  const matches = game.matches || [];
+  const tips = (game.tips && game.tips.fullTime) || {};
+  const expert = tips.expert || [];
+  const peoples = tips.peoples || [];
 
-  // Filter to events with a HUB/HA money market and sort by start time
-  const usable = events.filter(ev => ev.mainMarket && Array.isArray(ev.mainMarket.selections) && ev.mainMarket.selections.length >= 2);
-  usable.sort((a, b) => {
-    const ta = a.startTime ? new Date(a.startTime).getTime() : 0;
-    const tb = b.startTime ? new Date(b.startTime).getTime() : 0;
-    return ta - tb;
-  });
+  const stop = day.sales && day.sales.saleStopDate ? new Date(day.sales.saleStopDate) : null;
+  const stopStr = stop ? stop.toLocaleString('nb-NO', { weekday: 'short', day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' }) : '';
+  meta.innerHTML = `<span class="tag green">${matches.length}</span> kamper${stopStr ? ` · spillestopp ${htmlEsc(stopStr)}` : ''}`;
 
-  meta.innerHTML = `<span class="tag green">${usable.length}</span> kamper · neste 7 dager`;
+  if (!matches.length) {
+    content.innerHTML = '<div class="muted">Ingen kamper på denne kupongen ennå.</div>';
+    return;
+  }
 
-  const rows = usable.slice(0, 30).map(ev => {
-    const sels = ev.mainMarket.selections;
-    const findSel = code => sels.find(s => s.selectionValue === code);
-    const h = findSel('H'), d = findSel('D') || findSel('U'), a = findSel('A') || findSel('B');
-    const hasDraw = !!d;
-    const oH = h ? parseFloat(h.selectionOdds) : 0;
-    const oD = d ? parseFloat(d.selectionOdds) : 0;
-    const oA = a ? parseFloat(a.selectionOdds) : 0;
-    const odds = hasDraw ? [oH, oD, oA] : [oH, oA];
-    const probs = impliedProbs(odds);
-    const topIdx = odds.reduce((best, v, i) => (v > 0 && (odds[best] === 0 || v < odds[best])) ? i : best, 0);
+  const num = v => {
+    const n = parseFloat(v);
+    return isNaN(n) ? 0 : n;
+  };
+  const topIdx = arr => {
+    if (!arr) return -1;
+    const vals = [num(arr.home), num(arr.draw), num(arr.away)];
+    let best = 0;
+    for (let i = 1; i < 3; i++) if (vals[i] > vals[best]) best = i;
+    return best;
+  };
 
-    const home = ev.homeParticipant || (ev.eventName || '').split(' - ')[0] || '?';
-    const away = ev.awayParticipant || (ev.eventName || '').split(' - ')[1] || '?';
-    const league = (ev.tournament && ev.tournament.name) || '';
-    const koDate = ev.startTime ? new Date(ev.startTime) : null;
+  const rows = matches.map((m, i) => {
+    const home = (m.teams && m.teams.home && (m.teams.home.webName || m.teams.home.name)) || '?';
+    const away = (m.teams && m.teams.away && (m.teams.away.webName || m.teams.away.name)) || '?';
+    const league = (m.arrangement && m.arrangement.name) || '';
+    const koDate = m.date ? new Date(m.date) : null;
     const ko = koDate ? koDate.toLocaleString('nb-NO', { weekday: 'short', day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' }) : '';
-    const liveTag = ev.mainMarket.live ? '<span class="tag red" style="font-size:0.65rem;">live</span>' : '';
 
-    const cell = (val, prob, isTop) => {
-      if (!val) return '<td class="pct-cell muted">—</td>';
-      const cls = isTop ? 'pct-cell top' : 'pct-cell';
-      return `<td class="${cls}"><div style="font-weight:700;">${val.toFixed(2)}</div><div class="muted" style="font-size:0.7rem;">${Math.round(prob)}%</div></td>`;
+    const ex = expert[i] || {};
+    const pe = peoples[i] || {};
+    const exTop = topIdx(ex);
+    const peTop = topIdx(pe);
+
+    const cell = (val, isExpertTop, isPeopleTop) => {
+      const v = num(val);
+      let cls = 'pct-cell';
+      if (isExpertTop) cls += ' expert-top';
+      else if (isPeopleTop) cls += ' top';
+      return `<td class="${cls}">${Math.round(v)}%</td>`;
     };
 
-    if (hasDraw) {
-      return `
-        <tr>
-          <td class="match-col" style="text-align:left;">
-            <div class="match-name">${htmlEsc(home)} – ${htmlEsc(away)} ${liveTag}</div>
-            <div class="match-league">${htmlEsc(league)}${ko ? ` · ${ko}` : ''}</div>
-          </td>
-          ${cell(oH, probs[0], topIdx===0)}
-          ${cell(oD, probs[1], topIdx===1)}
-          ${cell(oA, probs[2], topIdx===2)}
-        </tr>`;
-    }
+    // "Verdi" marker — folket favoritt har større % enn ekspert (overspilt)
+    // eller ekspert favoritt har større % enn folket (undervurdert av folket)
+    const valueMarker = (idx) => {
+      const exV = num([ex.home, ex.draw, ex.away][idx] || 0);
+      const peV = num([pe.home, pe.draw, pe.away][idx] || 0);
+      if (exV > 0 && peV > 0 && exV - peV >= 12) return '<span class="value-marker" title="Ekspert tror mer på dette enn folket">verdi</span>';
+      return '';
+    };
+
     return `
       <tr>
-        <td class="match-col" style="text-align:left;">
-          <div class="match-name">${htmlEsc(home)} – ${htmlEsc(away)} ${liveTag}</div>
+        <td class="match-col">
+          <div class="match-name">${htmlEsc(home)} – ${htmlEsc(away)}</div>
           <div class="match-league">${htmlEsc(league)}${ko ? ` · ${ko}` : ''}</div>
         </td>
-        ${cell(oH, probs[0], topIdx===0)}
-        <td class="pct-cell muted">—</td>
-        ${cell(oA, probs[1], topIdx===1)}
+        ${cell(ex.home, exTop===0, false)}
+        ${cell(ex.draw, exTop===1, false)}
+        ${cell(ex.away, exTop===2, false)}
+        ${cell(pe.home, false, peTop===0)}
+        ${cell(pe.draw, false, peTop===1)}
+        ${cell(pe.away, false, peTop===2)}
+        <td style="text-align:center;">${valueMarker(0)}${valueMarker(1)}${valueMarker(2)}</td>
       </tr>`;
   }).join('');
 
@@ -1263,7 +1324,13 @@ function drawCoupon(data) {
       <table class="coupon-table">
         <thead>
           <tr>
-            <th class="match-col">Kamp</th>
+            <th class="match-col" rowspan="2">Kamp</th>
+            <th colspan="3">Ekspert</th>
+            <th colspan="3">Folket</th>
+            <th rowspan="2"></th>
+          </tr>
+          <tr>
+            <th>H</th><th>U</th><th>B</th>
             <th>H</th><th>U</th><th>B</th>
           </tr>
         </thead>
@@ -1271,22 +1338,471 @@ function drawCoupon(data) {
       </table>
     </div>
     <div class="coupon-legend">
-      <span class="swatch" style="background:rgba(56,189,248,0.4);"></span>Favoritt (laveste odds)
-      &nbsp;·&nbsp; Tall under odds = implisitt sannsynlighet (justert for bookies margin)
-      ${usable.length > 30 ? `&nbsp;·&nbsp; viser de første 30 av ${usable.length} kamper` : ''}
+      <span class="swatch" style="background:rgba(251,191,36,0.4);"></span>Ekspertenes favoritt
+      &nbsp;·&nbsp;
+      <span class="swatch" style="background:rgba(56,189,248,0.4);"></span>Folkets favoritt
+      &nbsp;·&nbsp;
+      <span class="value-marker">verdi</span> = ekspert tror minst 12 prosentpoeng mer på utfallet enn folket
     </div>
   `;
+
+  drawPicks();
+  fetchCouponOdds().then(() => drawPicks());
 }
 
 document.addEventListener('click', e => {
   if (e.target && e.target.id === 'coupon-refresh') renderCoupon(true);
 });
 
-document.addEventListener('change', e => {
-  if (e.target && e.target.id === 'coupon-sport') {
-    oddsenSport = e.target.value;
-    renderCoupon(false);
+// ---------- Odds lookup for coupon matches ----------
+function normalizeTeamName(s) {
+  return String(s || '').toLowerCase()
+    .replace(/[åä]/g, 'a').replace(/[øö]/g, 'o').replace(/[é]/g, 'e').replace(/[üû]/g, 'u')
+    .replace(/\bfc\b|\bsc\b|\bafc\b|\bcf\b|\bf\.c\.?\b|\b1\.?\b/g, '')
+    .replace(/[^a-z0-9]+/g, ' ').trim();
+}
+
+function teamTokens(s) {
+  const n = normalizeTeamName(s);
+  return n.split(' ').filter(t => t.length >= 3);
+}
+
+function teamSimilar(a, b) {
+  const na = normalizeTeamName(a), nb = normalizeTeamName(b);
+  if (!na || !nb) return false;
+  if (na === nb) return true;
+  if (na.includes(nb) || nb.includes(na)) return true;
+  const ta = teamTokens(a), tb = teamTokens(b);
+  if (!ta.length || !tb.length) return false;
+  // At least one token of length >= 4 must overlap
+  for (const t of ta) {
+    if (t.length >= 4 && tb.includes(t)) return true;
   }
+  return false;
+}
+
+async function fetchCouponOdds() {
+  const days = (couponData && couponData.gameDays) || [];
+  if (!days.length) { couponOddsIndex = null; return; }
+  const day = days.find(d => d.dayType === couponSelectedDay) || days[0];
+  const matches = (day.game && day.game.matches) || [];
+  if (!matches.length) { couponOddsIndex = null; return; }
+  let minT = Infinity, maxT = -Infinity;
+  for (const m of matches) {
+    if (!m.date) continue;
+    const t = new Date(m.date).getTime();
+    if (t < minT) minT = t;
+    if (t > maxT) maxT = t;
+  }
+  if (!isFinite(minT)) { couponOddsIndex = null; return; }
+  // Widen window: 12h before earliest, 12h after latest
+  const from = new Date(minT - 12*60*60*1000);
+  const to = new Date(maxT + 12*60*60*1000);
+  const url = `${ODDSEN_BASE}/FBL/${fmtOddsenDate(from)}/${fmtOddsenDate(to)}`;
+  try {
+    const res = await fetch(url, { method: 'GET', mode: 'cors', headers: { 'Accept': 'application/json' } });
+    if (!res.ok) throw new Error('HTTP ' + res.status);
+    const text = await res.text();
+    if (!text || !text.trim()) {
+      console.warn('[odds] Tom respons fra Oddsen — prøver bredere fallback');
+      // Fallback: bruk samme ukerange som ligakamper (som vi vet fungerer)
+      const wk = currentWeekRange();
+      const fbUrl = `${ODDSEN_BASE}/FBL/${fmtOddsenDate(wk.from)}/${fmtOddsenDate(wk.to)}`;
+      const fbRes = await fetch(fbUrl, { method: 'GET', mode: 'cors', headers: { 'Accept': 'application/json' } });
+      if (!fbRes.ok) throw new Error('Fallback HTTP ' + fbRes.status);
+      const fbText = await fbRes.text();
+      if (!fbText || !fbText.trim()) { couponOddsIndex = []; return; }
+      var data = JSON.parse(fbText);
+    } else {
+      var data = JSON.parse(text);
+    }
+    const events = (data && data.eventList) || [];
+    const list = [];
+    for (const ev of events) {
+      const home = ev.homeParticipant || (ev.eventName || '').split(' - ')[0] || '';
+      const away = ev.awayParticipant || (ev.eventName || '').split(' - ')[1] || '';
+      const sels = (ev.mainMarket && ev.mainMarket.selections) || [];
+      const find = code => sels.find(s => s.selectionValue === code);
+      const h = find('H'), d = find('D') || find('U'), a = find('A') || find('B');
+      const odds = {
+        H: h ? parseFloat(h.selectionOdds) : 0,
+        U: d ? parseFloat(d.selectionOdds) : 0,
+        B: a ? parseFloat(a.selectionOdds) : 0,
+      };
+      if (odds.H > 0 || odds.U > 0 || odds.B > 0) {
+        list.push({ home, away, odds });
+      }
+    }
+    couponOddsIndex = list;
+    console.log(`[odds] Hentet ${events.length} Oddsen-events, ${list.length} med 1X2-odds`);
+  } catch (e) {
+    console.warn('Coupon odds fetch failed:', e);
+    couponOddsIndex = null;
+  }
+}
+
+function lookupOdds(home, away) {
+  if (!couponOddsIndex || !Array.isArray(couponOddsIndex)) return null;
+  for (const ev of couponOddsIndex) {
+    if (teamSimilar(home, ev.home) && teamSimilar(away, ev.away)) return ev.odds;
+  }
+  // Try with full team names from Tippekupong (sometimes webName is too short)
+  console.log(`[odds] Ingen match for: "${home}" – "${away}"`);
+  return null;
+}
+
+// ---------- Anbefalte tips (value-score basert på ekspert vs folket) ----------
+function computePicks() {
+  const days = (couponData && couponData.gameDays) || [];
+  if (!days.length) return [];
+  const day = days.find(d => d.dayType === couponSelectedDay) || days[0];
+  const game = day.game || {};
+  const matches = game.matches || [];
+  const tips = (game.tips && game.tips.fullTime) || {};
+  const expert = tips.expert || [];
+  const peoples = tips.peoples || [];
+
+  const num = v => { const n = parseFloat(v); return isNaN(n) ? 0 : n; };
+  const labels = ['H', 'U', 'B'];
+
+  const picks = [];
+  matches.forEach((m, i) => {
+    const ex = expert[i] || {};
+    const pe = peoples[i] || {};
+    const exVals = [num(ex.home), num(ex.draw), num(ex.away)];
+    const peVals = [num(pe.home), num(pe.draw), num(pe.away)];
+
+    // Beste tegn ifølge eksperten
+    let exTop = 0;
+    for (let k = 1; k < 3; k++) if (exVals[k] > exVals[exTop]) exTop = k;
+    const exPct = exVals[exTop];
+    const pePctSameOutcome = peVals[exTop];
+
+    // Folkets favoritt
+    let peTop = 0;
+    for (let k = 1; k < 3; k++) if (peVals[k] > peVals[peTop]) peTop = k;
+
+    // Value-score: ekspert er trygg + folket er mindre trygg på samme tegn
+    const valueGap = exPct - pePctSameOutcome;
+    const disagrees = exTop !== peTop;
+    // Score: kombiner tillit (eksperten må være >40% for å være trygg nok)
+    // og verdi (gap mellom ekspert og folket på samme tegn)
+    const confidence = exPct;
+    const score = confidence + valueGap * 1.5 + (disagrees ? 8 : 0);
+
+    const home = (m.teams && m.teams.home && (m.teams.home.webName || m.teams.home.name)) || '?';
+    const away = (m.teams && m.teams.away && (m.teams.away.webName || m.teams.away.name)) || '?';
+    const league = (m.arrangement && m.arrangement.name) || '';
+    const oddsAll = lookupOdds(home, away);
+    const oddsForPick = oddsAll ? oddsAll[labels[exTop]] : null;
+
+    let reason = '';
+    if (exPct >= 65) reason = `Ekspertene er svært trygge (${Math.round(exPct)}%)`;
+    else if (valueGap >= 15) reason = `Ekspert ${Math.round(exPct)}% vs folket ${Math.round(pePctSameOutcome)}% — undervurdert av folket`;
+    else if (disagrees && exPct >= 45) reason = `Eksperten er uenig med folket (${labels[exTop]} vs ${labels[peTop]})`;
+    else if (exPct >= 50) reason = `Solid ekspertvurdering (${Math.round(exPct)}%)`;
+    else reason = `Lav tillit fra eksperten — bør unngås`;
+
+    picks.push({
+      idx: i + 1,
+      home, away, league,
+      pick: labels[exTop],
+      exPct, pePct: pePctSameOutcome, valueGap, disagrees, score, reason,
+      odds: oddsForPick, oddsAll,
+    });
+  });
+
+  return picks;
+}
+
+function drawPicks() {
+  const content = document.getElementById('picks-content');
+  const meta = document.getElementById('picks-meta');
+  if (!content) return;
+
+  const picks = computePicks();
+  if (!picks.length) {
+    content.innerHTML = '<div class="muted">Anbefalinger vises her når kupongen er lastet.</div>';
+    if (meta) meta.textContent = '';
+    return;
+  }
+
+  // Topp 5 etter score
+  const ranked = picks.slice().sort((a, b) => b.score - a.score);
+  const top = ranked.slice(0, 5);
+  const bottom = ranked.slice(-3).reverse(); // 3 svakeste
+
+  if (meta) meta.innerHTML = `Topp <span class="tag green">${top.length}</span> · vurderer ${picks.length} kamper`;
+
+  const card = (p, rank, kind) => {
+    const pickColor = p.disagrees ? 'var(--gold)' : 'var(--accent)';
+    const valueTag = p.valueGap >= 12 ? '<span class="value-marker">verdi</span>' : '';
+    const disTag = p.disagrees ? '<span class="tag gold" style="font-size:0.7rem;">uenig med folket</span>' : '';
+    const oddsBlock = p.odds
+      ? `<div style="text-align:center; min-width:3.5rem;">
+           <div class="muted" style="font-size:0.65rem; text-transform:uppercase; letter-spacing:0.05em;">Odds</div>
+           <div style="font-size:1.25rem; font-weight:700; color:var(--green);">${p.odds.toFixed(2)}</div>
+           ${p.oddsAll ? `<div class="muted" style="font-size:0.65rem;">H ${p.oddsAll.H.toFixed(2)} · U ${p.oddsAll.U.toFixed(2)} · B ${p.oddsAll.B.toFixed(2)}</div>` : ''}
+         </div>`
+      : '';
+    return `
+      <div style="display:flex; gap:0.75rem; padding:0.75rem; background:var(--bg-card-2); border:1px solid var(--border); border-radius:8px; align-items:center;">
+        <div style="font-size:1.5rem; font-weight:700; color:${pickColor}; min-width:2.5rem; text-align:center;">
+          ${kind === 'top' ? `#${rank}` : '⚠'}
+        </div>
+        <div style="flex:1; min-width:0;">
+          <div style="font-weight:600;">${htmlEsc(p.home)} – ${htmlEsc(p.away)}</div>
+          <div class="muted" style="font-size:0.8rem;">Kamp ${p.idx}${p.league ? ` · ${htmlEsc(p.league)}` : ''}</div>
+          <div class="muted" style="font-size:0.8rem; margin-top:0.2rem;">${p.reason} ${valueTag} ${disTag}</div>
+        </div>
+        <div style="text-align:center; min-width:3rem;">
+          <div style="font-size:1.6rem; font-weight:700; color:${pickColor};">${p.pick}</div>
+          <div class="muted" style="font-size:0.7rem;">ekspert ${Math.round(p.exPct)}%<br>folket ${Math.round(p.pePct)}%</div>
+        </div>
+        ${oddsBlock}
+      </div>`;
+  };
+
+  content.innerHTML = `
+    <div style="display:flex; flex-direction:column; gap:0.5rem;">
+      ${top.map((p, i) => card(p, i + 1, 'top')).join('')}
+    </div>
+    <div style="margin-top:1rem; padding-top:0.75rem; border-top:1px solid var(--border);">
+      <div class="muted mb-1" style="font-size:0.8rem; text-transform:uppercase; letter-spacing:0.05em;">Bør unngås</div>
+      <div style="display:flex; flex-direction:column; gap:0.5rem;">
+        ${bottom.map(p => card(p, 0, 'bottom')).join('')}
+      </div>
+    </div>
+    <div class="coupon-legend" style="margin-top:0.75rem;">
+      Score = ekspertens tillit + 1.5 × forskjell mot folket + bonus hvis ekspert og folket er uenige.
+      Høyere score = mer interessant tips.
+    </div>
+  `;
+}
+
+document.addEventListener('change', e => {
+  if (e.target && e.target.id === 'coupon-day') {
+    couponSelectedDay = e.target.value;
+    drawCoupon();
+    drawPicks();
+  }
+});
+
+// ---------- Ligakamper (Oddsen API) ----------
+const ODDSEN_BASE = 'https://api.norsk-tipping.no/OddsenGameInfo/v1/api/events';
+const LEAGUES_CACHE_KEY = 'leagues-cache';
+const LEAGUES_CACHE_TTL_MS = 15 * 60 * 1000;
+let leaguesLoading = false;
+
+const TARGET_LEAGUES = [
+  { key: 'pl',    label: 'Premier League', flag: '🏴',
+    test: name => /premier league/i.test(name) && /england|engelsk/i.test(name) && !/u\d|reserves|kvinner|women/i.test(name) },
+  { key: 'bl',    label: 'Bundesliga',     flag: '🇩🇪',
+    test: name => /bundesliga/i.test(name) && !/2\.|3\.|kvinner|women|frauen/i.test(name) },
+  { key: 'elite', label: 'Eliteserien',    flag: '🇳🇴',
+    test: name => /eliteserien/i.test(name) && !/kvinner|women/i.test(name) },
+];
+
+function fmtOddsenDate(d) {
+  const pad = n => String(n).padStart(2, '0');
+  return `${d.getFullYear()}${pad(d.getMonth()+1)}${pad(d.getDate())}${pad(d.getHours())}${pad(d.getMinutes())}`;
+}
+
+function currentWeekRange() {
+  const now = new Date();
+  const day = now.getDay(); // 0=Sun, 1=Mon ... 6=Sat
+  const diffToMon = day === 0 ? -6 : 1 - day;
+  const mon = new Date(now);
+  mon.setDate(now.getDate() + diffToMon);
+  mon.setHours(0, 0, 0, 0);
+  const sun = new Date(mon);
+  sun.setDate(mon.getDate() + 6);
+  sun.setHours(23, 59, 0, 0);
+  return { from: mon, to: sun };
+}
+
+function leaguesUrl() {
+  const { from, to } = currentWeekRange();
+  return `${ODDSEN_BASE}/FBL/${fmtOddsenDate(from)}/${fmtOddsenDate(to)}`;
+}
+
+function loadLeaguesCache() {
+  try {
+    const raw = localStorage.getItem(LEAGUES_CACHE_KEY);
+    if (!raw) return null;
+    const obj = JSON.parse(raw);
+    if (!obj.ts || (Date.now() - obj.ts) > LEAGUES_CACHE_TTL_MS) return null;
+    if (obj.url !== leaguesUrl()) return null; // week changed
+    return obj;
+  } catch (e) { return null; }
+}
+
+function saveLeaguesCache(data) {
+  try { localStorage.setItem(LEAGUES_CACHE_KEY, JSON.stringify({ ts: Date.now(), url: leaguesUrl(), data })); }
+  catch (e) {}
+}
+
+async function fetchLeagues(force = false) {
+  if (!force) {
+    const cached = loadLeaguesCache();
+    if (cached) return cached.data;
+  }
+  const res = await fetch(leaguesUrl(), {
+    method: 'GET',
+    mode: 'cors',
+    headers: { 'Accept': 'application/json' },
+  });
+  if (!res.ok) throw new Error('HTTP ' + res.status);
+  const data = await res.json();
+  saveLeaguesCache(data);
+  return data;
+}
+
+function renderLeagues(force = false) {
+  const card = document.getElementById('leagues-card');
+  if (!card) return;
+  const content = document.getElementById('leagues-content');
+  const meta = document.getElementById('leagues-meta');
+  if (leaguesLoading) return;
+  leaguesLoading = true;
+  content.innerHTML = '<div class="muted">' + (force ? 'Henter på nytt…' : 'Laster ligakamper fra Norsk Tipping…') + '</div>';
+  meta.textContent = '';
+
+  fetchLeagues(force).then(data => {
+    leaguesLoading = false;
+    drawLeagues(data);
+  }).catch(err => {
+    leaguesLoading = false;
+    console.warn('Leagues fetch failed:', err);
+    content.innerHTML = `
+      <div class="muted">
+        Kunne ikke hente ligakamper fra Norsk Tipping
+        ${err && err.message ? `(${htmlEsc(err.message)})` : ''}.
+        Dette skyldes sannsynligvis CORS-blokkering i nettleseren.
+      </div>`;
+    meta.textContent = '';
+  });
+}
+
+function drawLeagues(data) {
+  const content = document.getElementById('leagues-content');
+  const meta = document.getElementById('leagues-meta');
+  const events = (data && data.eventList) || [];
+
+  // Filter events to only those with real 1X2 odds
+  const hasOdds = ev => {
+    const sels = (ev.mainMarket && ev.mainMarket.selections) || [];
+    const find = code => sels.find(s => s.selectionValue === code);
+    const h = find('H'), d = find('D') || find('U'), a = find('A') || find('B');
+    const oH = h ? parseFloat(h.selectionOdds) : 0;
+    const oD = d ? parseFloat(d.selectionOdds) : 0;
+    const oA = a ? parseFloat(a.selectionOdds) : 0;
+    return oH > 0 || oD > 0 || oA > 0;
+  };
+
+  // Bucket events by target league (kun kamper med reelle odds)
+  const buckets = TARGET_LEAGUES.map(L => ({ ...L, events: [] }));
+  for (const ev of events) {
+    if (!hasOdds(ev)) continue;
+    const tName = (ev.tournament && ev.tournament.name) || '';
+    const cName = (ev.tournament && ev.tournament.category && ev.tournament.category.name) || '';
+    const combined = `${cName} ${tName}`;
+    for (const b of buckets) {
+      if (b.test(combined)) { b.events.push(ev); break; }
+    }
+  }
+
+  const total = buckets.reduce((s, b) => s + b.events.length, 0);
+  const { from, to } = currentWeekRange();
+  const wkLabel = `${from.toLocaleDateString('nb-NO', { day: '2-digit', month: 'short' })} – ${to.toLocaleDateString('nb-NO', { day: '2-digit', month: 'short' })}`;
+  meta.innerHTML = `<span class="tag green">${total}</span> kamper · ${htmlEsc(wkLabel)}`;
+
+  if (!total) {
+    content.innerHTML = '<div class="muted">Ingen kamper i Premier League, Bundesliga eller Eliteserien denne uken.</div>';
+    return;
+  }
+
+  const num = v => { const n = parseFloat(v); return isNaN(n) ? 0 : n; };
+
+  const renderRow = (ev) => {
+    const sels = (ev.mainMarket && ev.mainMarket.selections) || [];
+    const findSel = code => sels.find(s => s.selectionValue === code);
+    const h = findSel('H'), d = findSel('D') || findSel('U'), a = findSel('A') || findSel('B');
+    const oH = h ? num(h.selectionOdds) : 0;
+    const oD = d ? num(d.selectionOdds) : 0;
+    const oA = a ? num(a.selectionOdds) : 0;
+    const odds = [oH, oD, oA];
+    const positives = odds.map((v, i) => v > 0 ? i : -1).filter(i => i >= 0);
+    let topIdx = -1;
+    if (positives.length) {
+      topIdx = positives[0];
+      for (const i of positives) if (odds[i] < odds[topIdx]) topIdx = i;
+    }
+
+    const home = ev.homeParticipant || (ev.eventName || '').split(' - ')[0] || '?';
+    const away = ev.awayParticipant || (ev.eventName || '').split(' - ')[1] || '?';
+    const koDate = ev.startTime ? new Date(ev.startTime) : null;
+    const ko = koDate ? koDate.toLocaleString('nb-NO', { weekday: 'short', day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' }) : '';
+    const liveTag = ev.mainMarket && ev.mainMarket.live ? '<span class="tag red" style="font-size:0.65rem;">live</span>' : '';
+
+    const cell = (val, isTop) => {
+      if (!val) return '<td class="pct-cell muted">—</td>';
+      const cls = isTop ? 'pct-cell top' : 'pct-cell';
+      return `<td class="${cls}" style="font-weight:700;">${val.toFixed(2)}</td>`;
+    };
+
+    return `
+      <tr>
+        <td class="match-col">
+          <div class="match-name">${htmlEsc(home)} – ${htmlEsc(away)} ${liveTag}</div>
+          <div class="match-league">${ko ? htmlEsc(ko) : ''}</div>
+        </td>
+        ${cell(oH, topIdx === 0)}
+        ${cell(oD, topIdx === 1)}
+        ${cell(oA, topIdx === 2)}
+      </tr>`;
+  };
+
+  const sections = buckets.filter(b => b.events.length).map(b => {
+    b.events.sort((x, y) => {
+      const tx = x.startTime ? new Date(x.startTime).getTime() : 0;
+      const ty = y.startTime ? new Date(y.startTime).getTime() : 0;
+      return tx - ty;
+    });
+    return `
+      <div style="margin-top:1rem;">
+        <h4 style="font-size:0.95rem; color:var(--accent); margin-bottom:0.4rem;">
+          ${b.flag} ${htmlEsc(b.label)} <span class="muted" style="font-weight:400; font-size:0.8rem;">· ${b.events.length} kamper</span>
+        </h4>
+        <div style="overflow-x:auto;">
+          <table class="coupon-table" style="table-layout:fixed; width:100%;">
+            <colgroup>
+              <col>
+              <col style="width:4.5rem;">
+              <col style="width:4.5rem;">
+              <col style="width:4.5rem;">
+            </colgroup>
+            <thead>
+              <tr>
+                <th class="match-col">Kamp</th>
+                <th>H</th><th>U</th><th>B</th>
+              </tr>
+            </thead>
+            <tbody>${b.events.map(renderRow).join('')}</tbody>
+          </table>
+        </div>
+      </div>`;
+  }).join('');
+
+  content.innerHTML = sections + `
+    <div class="coupon-legend">
+      <span class="swatch" style="background:rgba(56,189,248,0.4);"></span>Favoritt (laveste odds)
+      &nbsp;·&nbsp; H = hjemme · U = uavgjort · B = borte
+    </div>`;
+}
+
+document.addEventListener('click', e => {
+  if (e.target && e.target.id === 'leagues-refresh') renderLeagues(true);
 });
 
 // ---------- Dashboard ----------
@@ -1375,7 +1891,11 @@ function renderDashboard() {
   renderWeeklyYearFilter('weekly-year-filter-dash');
   drawWeeklyComboChart('chart-weekly-combo-dash');
   drawCumulativeChart('chart-cumulative-dash', 200);
+}
+
+function renderOdds() {
   renderCoupon(false);
+  renderLeagues(false);
 }
 
 function standings(weeksSubset) {

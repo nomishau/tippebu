@@ -488,8 +488,7 @@ footer { text-align: center; padding: 2rem; color: var(--text-dim); font-size: 0
           <input type="number" id="f-gevinst" step="0.01" value="0" required>
         </label>
         <label>Ukepot (kr)
-          <input type="number" id="f-ukepot" step="1" min="0">
-          <span class="muted" id="f-ukepot-hint" style="font-size:0.8rem;"></span>
+          <input type="text" id="f-ukepot-display" readonly style="background:var(--bg-card); color:var(--text-dim);">
         </label>
         <label style="grid-column: 1 / -1;">Kommentar
           <textarea id="f-kommentar"></textarea>
@@ -2533,27 +2532,19 @@ function updatePaidSummary() {
   const active = Array.from(cbs).filter(cb => cb.dataset.active === '1');
   const paid = active.filter(cb => cb.dataset.paid === '1').length;
   document.getElementById('f-paid-summary').textContent = `${paid} av ${active.length} har betalt`;
-  const ukepotEl = document.getElementById('f-ukepot');
-  const hintEl = document.getElementById('f-ukepot-hint');
+  const ukepotEl = document.getElementById('f-ukepot-display');
   if (!ukepotEl) return;
   const year = parseInt(document.getElementById('f-year').value);
   const ukeRaw = document.getElementById('f-uke').value.trim();
   const ukeNum = parseInt(ukeRaw, 10);
   const uke = (!isNaN(ukeNum) && String(ukeNum) === ukeRaw) ? ukeNum : ukeRaw;
   if (isAutoUkepotWeek(year, uke)) {
-    ukepotEl.value = paid * UKEPOT_PER_PLAYER;
-    ukepotEl.readOnly = true;
-    ukepotEl.style.background = 'var(--bg-card)';
-    ukepotEl.style.color = 'var(--text-dim)';
-    if (hintEl) hintEl.textContent = `Auto: ${paid} × ${UKEPOT_PER_PLAYER} kr`;
+    ukepotEl.value = `${paid * UKEPOT_PER_PLAYER} kr (${paid} × ${UKEPOT_PER_PLAYER})`;
   } else {
+    // Pre-rule week: keep stored value
     const editId = document.getElementById('form-edit-id').value;
     const stored = editId !== '' ? (DATA.weeks[parseInt(editId)] || {}).ukepot : null;
-    if (stored != null && document.activeElement !== ukepotEl) ukepotEl.value = stored;
-    ukepotEl.readOnly = false;
-    ukepotEl.style.background = '';
-    ukepotEl.style.color = '';
-    if (hintEl) hintEl.textContent = 'Historisk uke — kan redigeres manuelt';
+    ukepotEl.value = stored != null ? `${stored} kr (historisk verdi)` : '— (historisk)';
   }
 }
 
@@ -2631,9 +2622,8 @@ document.getElementById('add-form').addEventListener('submit', e => {
   const ukeNum = parseInt(ukeRaw, 10);
   const uke = (!isNaN(ukeNum) && String(ukeNum) === ukeRaw) ? ukeNum : ukeRaw;
 
-  const yearVal = parseInt(document.getElementById('f-year').value);
   const w = {
-    year: yearVal,
+    year: parseInt(document.getElementById('f-year').value),
     uke,
     tipper: document.getElementById('f-tipper').value,
     gevinst: parseFloat(document.getElementById('f-gevinst').value) || 0,
@@ -2641,11 +2631,6 @@ document.getElementById('add-form').addEventListener('submit', e => {
     paid: getPaidFromForm(),
     ukepot: 0, sumTapGev: 0, pengerIBua: 0, sumInnbetalt: 0,
   };
-  // Auto-rule weeks compute ukepot from paid count; historic weeks use form value.
-  if (!isAutoUkepotWeek(yearVal, uke)) {
-    const manualUkepot = parseFloat(document.getElementById('f-ukepot').value);
-    if (!isNaN(manualUkepot)) w.ukepot = manualUkepot;
-  }
 
   // Prevent duplicates: another row with same year+uke must not exist
   const eIdxNum = editId === '' ? -1 : parseInt(editId);

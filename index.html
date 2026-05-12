@@ -364,7 +364,7 @@ footer { text-align: center; padding: 2rem; color: var(--text-dim); font-size: 0
   <div class="kpi-grid" id="kpi-grid"></div>
 
   <div class="card next-up" id="next-up-card">
-    <h3>🎯 Neste uke</h3>
+    <h3>🎯 Denne uken</h3>
     <div id="next-up-content"></div>
   </div>
 
@@ -538,6 +538,7 @@ footer { text-align: center; padding: 2rem; color: var(--text-dim); font-size: 0
       <option value="unpaid">Kun ubetalte uker</option>
       <option value="all">Alle uker</option>
     </select>
+    <button class="btn small" id="mark-current-group-paid" style="margin-left:auto;" title="Marker alle spillere som betalt for gjeldende 5-ukers periode">✓ Marker gjeldende 5-ukers periode som betalt</button>
   </div>
 
   <div class="card">
@@ -1078,7 +1079,7 @@ function applyRoleGates() {
     roleEl.textContent = currentUsername ? `${currentUsername} · ${label}` : label;
     roleEl.className = 'role ' + (currentRole || '');
   }
-  ['add-season-btn','add-expense-btn','add-special-btn'].forEach(id => {
+  ['add-season-btn','add-expense-btn','add-special-btn','mark-current-group-paid'].forEach(id => {
     const el = document.getElementById(id);
     if (el) el.style.display = admin ? '' : 'none';
   });
@@ -1892,19 +1893,63 @@ function renderDashboard() {
     `<div class="kpi ${k.cls}"><div class="label">${k.label}</div><div class="value">${k.value}</div></div>`
   ).join('');
 
-  // Next up — show next week prominently, plus 4 more
-  const upcoming = getNextWeeks(5);
-  const next = upcoming[0];
-  const rest = upcoming.slice(1);
+  // Current week — show this week's tipper prominently, plus 4 upcoming weeks
+  const nowWk = isoWeekNow();
+  const currentEntry = DATA.weeks.find(w => w.year === nowWk.year && w.uke === nowWk.uke);
+  const fallbackNext = getNextWeek();
+  const current = currentEntry || fallbackNext;
+  const isRegistered = !!currentEntry && SETTLED(currentEntry);
+  // Find 4 weeks after the current week
+  let rest;
+  if (currentEntry) {
+    const idx = DATA.weeks.indexOf(currentEntry);
+    const future = DATA.weeks.slice(idx + 1).filter(w => !w.special).slice(0, 4);
+    if (future.length < 4) {
+      // Top up from rotation if we don't have enough planlagte weeks
+      const need = 4 - future.length;
+      const last = future[future.length - 1] || currentEntry;
+      // Project forward from the last known week using rotation
+      const projected = [];
+      let curYear = last.year;
+      let curUke = typeof last.uke === 'number' ? last.uke : 0;
+      const recentTippers = settledWeeks().slice(-9).map(w => w.tipper);
+      const activeRot = PLAYERS_ROTATION.filter(p => recentTippers.includes(p));
+      const rotation = activeRot.length ? activeRot : PLAYERS_ROTATION;
+      let lastIdx = rotation.indexOf(last.tipper);
+      if (lastIdx < 0) lastIdx = -1;
+      for (let i = 0; i < need; i++) {
+        if (curUke >= 52) { curUke = 1; curYear += 1; } else { curUke += 1; }
+        lastIdx = (lastIdx + 1) % rotation.length;
+        projected.push({ year: curYear, uke: curUke, tipper: rotation[lastIdx] });
+      }
+      rest = future.concat(projected);
+    } else {
+      rest = future;
+    }
+  } else {
+    rest = getNextWeeks(5).slice(1);
+  }
+  const statusTag = isRegistered
+    ? '<span class="tag green" style="font-size:0.7rem; margin-left:0.5rem;">registrert</span>'
+    : (currentEntry ? '<span class="tag gold" style="font-size:0.7rem; margin-left:0.5rem;">planlagt</span>' : '');
+  const hint = isRegistered
+    ? 'Uka er registrert. Klikk «Rediger» for å endre resultat eller betalinger.'
+    : 'Foreslått basert på rotasjon. Du kan endre tipper i skjemaet.';
+  const actionBtn = isAdmin()
+    ? (currentEntry
+        ? `<button class="btn" onclick="editWeek(${DATA.weeks.indexOf(currentEntry)})">${isRegistered ? '✎ Rediger' : 'Registrer resultat'}</button>`
+        : `<button class="btn" onclick="goTab('add')">Registrer resultat</button>`)
+    : '';
   document.getElementById('next-up-content').innerHTML = `
     <div class="flex-between" style="gap:1rem; flex-wrap:wrap;">
       <div class="flex" style="font-size:1.25rem; gap:1.5rem; align-items:baseline;">
-        <div><strong style="font-size:1.4rem;">Uke ${next.uke}</strong> <span class="muted" style="font-size:1rem;">· ${next.year}</span></div>
-        <div>Tipper: <strong style="color:var(--accent); font-size:1.4rem;">${next.tipper}</strong></div>
+        <div><strong style="font-size:1.4rem;">Uke ${current.uke}</strong> <span class="muted" style="font-size:1rem;">· ${current.year}</span>${statusTag}</div>
+        <div>Tipper: <strong style="color:var(--accent); font-size:1.4rem;">${current.tipper}</strong></div>
+        ${isRegistered ? `<div>Gevinst: <strong style="color:${(current.gevinst||0)>=0?'var(--green)':'var(--red)'}; font-size:1.4rem;">${fmtKr(current.gevinst)}</strong></div>` : ''}
       </div>
-      ${isAdmin() ? `<button class="btn" onclick="goTab('add')">Registrer resultat</button>` : ''}
+      ${actionBtn}
     </div>
-    <div class="muted mt-1" style="font-size:0.85rem;">Foreslått basert på rotasjon. Du kan endre tipper i skjemaet.</div>
+    <div class="muted mt-1" style="font-size:0.85rem;">${hint}</div>
     ${rest.length ? `
       <div style="margin-top:1rem; padding-top:1rem; border-top:1px solid var(--border);">
         <div class="muted mb-1" style="font-size:0.8rem; text-transform:uppercase; letter-spacing:0.05em;">Deretter</div>
@@ -2261,6 +2306,17 @@ function renderPayments() {
   }
   drawPaymentsMatrix();
   drawPaymentsKpisAndStats();
+  scrollToCurrentPaymentsWeek();
+}
+
+function scrollToCurrentPaymentsWeek() {
+  requestAnimationFrame(() => {
+    const row = document.querySelector('#payments-tbody tr.current-week');
+    if (!row) return;
+    const wrap = row.closest('.table-wrap');
+    if (!wrap) return;
+    wrap.scrollTop = Math.max(0, row.offsetTop - 60);
+  });
 }
 
 function drawPaymentsKpisAndStats() {
@@ -2388,15 +2444,6 @@ function drawPaymentsMatrix() {
       <td class="num"><span class="tag ${pc.paid===pc.total && pc.total>0 ? 'green' : (pc.paid > 0 ? 'gold' : 'red')}">${pc.paid}/${pc.total||'-'}</span></td>
     </tr>`;
   }).join('');
-
-  // Scroll the current week into view (like in Ukentlig logg)
-  requestAnimationFrame(() => {
-    const row = document.querySelector('#payments-tbody tr.current-week');
-    if (!row) return;
-    const wrap = row.closest('.table-wrap');
-    if (!wrap) return;
-    wrap.scrollTop = Math.max(0, row.offsetTop - 60);
-  });
 }
 
 function togglePaid(idx, player) {
@@ -2454,6 +2501,45 @@ document.getElementById('payments-year').addEventListener('change', () => {
   drawPaymentsMatrix();
 });
 document.getElementById('payments-view').addEventListener('change', drawPaymentsMatrix);
+
+function markCurrentGroupPaid() {
+  if (!requireAdmin()) return;
+  const nowWk = isoWeekNow();
+  const currGroup = paymentGroupIndex(nowWk.year, nowWk.uke);
+  if (currGroup === null) {
+    toast('Kunne ikke finne gjeldende periode', true);
+    return;
+  }
+  const weeksInGroup = DATA.weeks.filter(w => {
+    if (w.special) return false;
+    if (typeof w.uke !== 'number') return false;
+    return paymentGroupIndex(w.year, w.uke) === currGroup;
+  });
+  if (!weeksInGroup.length) {
+    toast('Ingen uker i gjeldende 5-ukers periode', true);
+    return;
+  }
+  const label = weeksInGroup.map(w => `${w.year}/${w.uke}`).join(', ');
+  if (!confirm(`Markere alle spillere som betalt for ${weeksInGroup.length} uker (${label})?`)) return;
+  let cellsChanged = 0;
+  for (const w of weeksInGroup) {
+    if (!w.paid) continue;
+    for (const p of Object.keys(w.paid)) {
+      if (!w.paid[p]) { w.paid[p] = true; cellsChanged++; }
+    }
+  }
+  if (cellsChanged === 0) {
+    toast('Alle spillere er allerede markert som betalt');
+    return;
+  }
+  recomputeRunningTotals();
+  saveData();
+  drawPaymentsMatrix();
+  drawPaymentsKpisAndStats();
+  toast(`${cellsChanged} betalinger markert`);
+}
+
+document.getElementById('mark-current-group-paid').addEventListener('click', markCurrentGroupPaid);
 
 // ---------- Add / Edit ----------
 let formOriginalTipper = null;

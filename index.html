@@ -988,9 +988,9 @@ function getNextWeeks(count) {
 }
 
 function restoreHistoricFromExcel() {
-  // For weeks before the auto-rule threshold, fill in Excel values only when
-  // the loaded data is missing them. Never overwrite values that Supabase
-  // already has — those are authoritative (and may include user edits).
+  // For weeks before the auto-rule threshold, restore Excel values for ukepot,
+  // sumTapGev, pengerIBua, sumInnbetalt (in case a previous version overwrote
+  // them in localStorage).
   let initial;
   try { initial = JSON.parse(document.getElementById('initial-data').textContent); }
   catch (e) { return; }
@@ -1002,9 +1002,7 @@ function restoreHistoricFromExcel() {
     const o = orig.get(`${w.year}/${w.uke}`);
     if (!o) continue;
     for (const f of fields) {
-      if ((w[f] === undefined || w[f] === null) && o[f] !== undefined && o[f] !== null) {
-        w[f] = o[f];
-      }
+      if (o[f] !== undefined && o[f] !== null) w[f] = o[f];
     }
   }
 }
@@ -2644,11 +2642,9 @@ document.getElementById('add-form').addEventListener('submit', e => {
     ukepot: 0, sumTapGev: 0, pengerIBua: 0, sumInnbetalt: 0,
   };
   // Auto-rule weeks compute ukepot from paid count; historic weeks use form value.
-  const isHistoric = !isAutoUkepotWeek(yearVal, uke);
-  if (isHistoric) {
+  if (!isAutoUkepotWeek(yearVal, uke)) {
     const manualUkepot = parseFloat(document.getElementById('f-ukepot').value);
     if (!isNaN(manualUkepot)) w.ukepot = manualUkepot;
-    w.sumTapGev = null; w.pengerIBua = null; w.sumInnbetalt = null;
   }
 
   // Prevent duplicates: another row with same year+uke must not exist
@@ -2691,15 +2687,6 @@ document.getElementById('add-form').addEventListener('submit', e => {
     const bn = typeof b.uke === 'number' ? b.uke : 100;
     return an - bn;
   });
-  // If a historic ukepot was edited, invalidate the entire historic chain so
-  // recomputeRunningTotals rebuilds it from scratch instead of resetting back
-  // to stored values at each subsequent historic row.
-  if (isHistoric) {
-    for (const wk of DATA.weeks) {
-      if (isAutoUkepotWeek(wk.year, wk.uke)) continue;
-      wk.sumTapGev = null; wk.pengerIBua = null; wk.sumInnbetalt = null;
-    }
-  }
   recomputeRunningTotals();
   saveData();
   toast((editId === '' ? 'Uke registrert' : 'Uke oppdatert') + syncMessage);

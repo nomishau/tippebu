@@ -2,7 +2,16 @@
 <html lang="no">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<meta name="theme-color" content="#0f172a">
+<meta name="color-scheme" content="dark">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Tippelag">
+<link rel="icon" type="image/svg+xml" href="data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCA1MTIgNTEyIj4KPHJlY3Qgd2lkdGg9IjUxMiIgaGVpZ2h0PSI1MTIiIHJ4PSI5NiIgZmlsbD0iIzBmMTcyYSIvPgo8Y2lyY2xlIGN4PSIyNTYiIGN5PSIyNTYiIHI9IjIwMCIgZmlsbD0iIzFlMjkzYiIgc3Ryb2tlPSIjZmJiZjI0IiBzdHJva2Utd2lkdGg9IjEwIi8+CjxyZWN0IHg9IjE0OCIgeT0iMTU2IiB3aWR0aD0iMjE2IiBoZWlnaHQ9IjUyIiByeD0iNiIgZmlsbD0iI2ZiYmYyNCIvPgo8cmVjdCB4PSIyMzAiIHk9IjE1NiIgd2lkdGg9IjUyIiBoZWlnaHQ9IjIyMCIgcng9IjYiIGZpbGw9IiNmYmJmMjQiLz4KPC9zdmc+">
+<link rel="apple-touch-icon" href="data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCA1MTIgNTEyIj4KPHJlY3Qgd2lkdGg9IjUxMiIgaGVpZ2h0PSI1MTIiIHJ4PSI5NiIgZmlsbD0iIzBmMTcyYSIvPgo8Y2lyY2xlIGN4PSIyNTYiIGN5PSIyNTYiIHI9IjIwMCIgZmlsbD0iIzFlMjkzYiIgc3Ryb2tlPSIjZmJiZjI0IiBzdHJva2Utd2lkdGg9IjEwIi8+CjxyZWN0IHg9IjE0OCIgeT0iMTU2IiB3aWR0aD0iMjE2IiBoZWlnaHQ9IjUyIiByeD0iNiIgZmlsbD0iI2ZiYmYyNCIvPgo8cmVjdCB4PSIyMzAiIHk9IjE1NiIgd2lkdGg9IjUyIiBoZWlnaHQ9IjIyMCIgcng9IjYiIGZpbGw9IiNmYmJmMjQiLz4KPC9zdmc+">
+<link rel="manifest" href="data:application/manifest+json;base64,eyJuYW1lIjogIlRpcHBlbGFnIOKAlCBTdGF0cyAmIEFkbWluIiwgInNob3J0X25hbWUiOiAiVGlwcGVsYWciLCAic3RhcnRfdXJsIjogIi4vIiwgInNjb3BlIjogIi4vIiwgImRpc3BsYXkiOiAic3RhbmRhbG9uZSIsICJvcmllbnRhdGlvbiI6ICJwb3J0cmFpdCIsICJiYWNrZ3JvdW5kX2NvbG9yIjogIiMwZjE3MmEiLCAidGhlbWVfY29sb3IiOiAiIzBmMTcyYSIsICJpY29ucyI6IFt7InNyYyI6ICJkYXRhOmltYWdlL3N2Zyt4bWw7YmFzZTY0LFBITjJaeUI0Yld4dWN6MGlhSFIwY0RvdkwzZDNkeTUzTXk1dmNtY3ZNakF3TUM5emRtY2lJSFpwWlhkQ2IzZzlJakFnTUNBMU1USWdOVEV5SWo0S1BISmxZM1FnZDJsa2RHZzlJalV4TWlJZ2FHVnBaMmgwUFNJMU1USWlJSEo0UFNJNU5pSWdabWxzYkQwaUl6Qm1NVGN5WVNJdlBnbzhZMmx5WTJ4bElHTjRQU0l5TlRZaUlHTjVQU0l5TlRZaUlISTlJakl3TUNJZ1ptbHNiRDBpSXpGbE1qa3pZaUlnYzNSeWIydGxQU0lqWm1KaVpqSTBJaUJ6ZEhKdmEyVXRkMmxrZEdnOUlqRXdJaTgrQ2p4eVpXTjBJSGc5SWpFME9DSWdlVDBpTVRVMklpQjNhV1IwYUQwaU1qRTJJaUJvWldsbmFIUTlJalV5SWlCeWVEMGlOaUlnWm1sc2JEMGlJMlppWW1ZeU5DSXZQZ284Y21WamRDQjRQU0l5TXpBaUlIazlJakUxTmlJZ2QybGtkR2c5SWpVeUlpQm9aV2xuYUhROUlqSXlNQ0lnY25nOUlqWWlJR1pwYkd3OUlpTm1ZbUptTWpRaUx6NEtQQzl6ZG1jKyIsICJzaXplcyI6ICJhbnkiLCAidHlwZSI6ICJpbWFnZS9zdmcreG1sIiwgInB1cnBvc2UiOiAiYW55In0sIHsic3JjIjogImRhdGE6aW1hZ2Uvc3ZnK3htbDtiYXNlNjQsUEhOMlp5QjRiV3h1Y3owaWFIUjBjRG92TDNkM2R5NTNNeTV2Y21jdk1qQXdNQzl6ZG1jaUlIWnBaWGRDYjNnOUlqQWdNQ0ExTVRJZ05URXlJajRLUEhKbFkzUWdkMmxrZEdnOUlqVXhNaUlnYUdWcFoyaDBQU0kxTVRJaUlISjRQU0k1TmlJZ1ptbHNiRDBpSXpCbU1UY3lZU0l2UGdvOFkybHlZMnhsSUdONFBTSXlOVFlpSUdONVBTSXlOVFlpSUhJOUlqSXdNQ0lnWm1sc2JEMGlJekZsTWprellpSWdjM1J5YjJ0bFBTSWpabUppWmpJMElpQnpkSEp2YTJVdGQybGtkR2c5SWpFd0lpOCtDanh5WldOMElIZzlJakUwT0NJZ2VUMGlNVFUySWlCM2FXUjBhRDBpTWpFMklpQm9aV2xuYUhROUlqVXlJaUJ5ZUQwaU5pSWdabWxzYkQwaUkyWmlZbVl5TkNJdlBnbzhjbVZqZENCNFBTSXlNekFpSUhrOUlqRTFOaUlnZDJsa2RHZzlJalV5SWlCb1pXbG5hSFE5SWpJeU1DSWdjbmc5SWpZaUlHWnBiR3c5SWlObVltSm1NalFpTHo0S1BDOXpkbWMrIiwgInNpemVzIjogImFueSIsICJ0eXBlIjogImltYWdlL3N2Zyt4bWwiLCAicHVycG9zZSI6ICJtYXNrYWJsZSJ9XX0=">
 <title>Tippelag — Stats & Admin</title>
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
@@ -33,7 +42,7 @@ body {
 header {
   background: linear-gradient(135deg, #1e293b 0%, #0f172a 100%);
   border-bottom: 1px solid var(--border);
-  padding: 1rem 2rem;
+  padding: max(1rem, env(safe-area-inset-top)) max(2rem, env(safe-area-inset-right)) 1rem max(2rem, env(safe-area-inset-left));
   position: sticky; top: 0; z-index: 100;
   box-shadow: 0 4px 12px rgba(0,0,0,0.3);
 }
@@ -361,7 +370,6 @@ footer { text-align: center; padding: 2rem; color: var(--text-dim); font-size: 0
 <!-- DASHBOARD -->
 <section id="tab-dashboard" class="active">
   <h2>Dashboard</h2>
-  <div class="kpi-grid" id="kpi-grid"></div>
 
   <div class="card next-up" id="next-up-card">
     <h3>🎯 Denne uken</h3>
@@ -378,6 +386,8 @@ footer { text-align: center; padding: 2rem; color: var(--text-dim); font-size: 0
       <div id="dashboard-recent"></div>
     </div>
   </div>
+
+  <div class="kpi-grid" id="kpi-grid"></div>
 
   <div class="card">
     <div class="flex-between mb-1">
@@ -2855,15 +2865,31 @@ function renderLeaderboard() {
 document.getElementById('leaderboard-scope').addEventListener('change', renderLeaderboard);
 
 // ---------- Personal stats ----------
+function matchPlayerFromUsername(username, players) {
+  if (!username) return null;
+  const u = username.toLowerCase();
+  const exact = players.find(p => p.toLowerCase() === u);
+  if (exact) return exact;
+  const starts = players.find(p => p.toLowerCase().startsWith(u));
+  if (starts) return starts;
+  return players.find(p => p.toLowerCase().includes(u)) || null;
+}
+
 function populatePersonalSelectors() {
   const playerSel = document.getElementById('personal-player');
   const yearSel = document.getElementById('personal-year');
   const prevPlayer = playerSel.value;
   const prevYear = yearSel.value;
+  const players = uniquePlayers();
 
-  playerSel.innerHTML = uniquePlayers().map(p => `<option value="${p}">${p}</option>`).join('');
-  // restore or default to first player
-  if (uniquePlayers().includes(prevPlayer)) playerSel.value = prevPlayer;
+  playerSel.innerHTML = players.map(p => `<option value="${p}">${p}</option>`).join('');
+  // restore previous, else match logged-in user, else first player
+  if (players.includes(prevPlayer)) {
+    playerSel.value = prevPlayer;
+  } else {
+    const matched = matchPlayerFromUsername(currentUsername, players);
+    if (matched) playerSel.value = matched;
+  }
 
   // Years: clear and rebuild
   Array.from(yearSel.options).forEach(o => { if (o.value !== '') o.remove(); });
@@ -3184,10 +3210,17 @@ function renderCharts() {
   destroyChart('chart-zeros');
   chartInstances['chart-zeros'] = new Chart(document.getElementById('chart-zeros'), {
     type: 'bar',
-    data: { labels, datasets: [{ label: '% nullrunder', data: stand.map(s => +s.zeroPct.toFixed(1)), backgroundColor: '#f87171' }] },
+    data: { labels, datasets: [
+      { label: 'Antall nullrunder', data: stand.map(s => s.zeros), backgroundColor: '#f87171', yAxisID: 'y', order: 2 },
+      { label: '% nullrunder', data: stand.map(s => +s.zeroPct.toFixed(1)), type: 'line', showLine: false, borderColor: '#fbbf24', backgroundColor: '#fbbf24', pointBackgroundColor: '#fbbf24', pointBorderColor: '#0f172a', pointBorderWidth: 2, pointRadius: 6, pointHoverRadius: 8, yAxisID: 'y1', order: 0 },
+    ] },
     options: { responsive: true, maintainAspectRatio: false,
-      plugins: { legend: { display: false } },
-      scales: { x: { ticks: { color: '#e2e8f0' }, grid: { color: '#334155' } }, y: { ticks: { color: '#94a3b8' }, grid: { color: '#334155' } } } }
+      plugins: { legend: { labels: { color: '#e2e8f0' } } },
+      scales: {
+        x: { ticks: { color: '#e2e8f0' }, grid: { color: '#334155' } },
+        y: { position: 'left', beginAtZero: true, title: { display: true, text: 'Antall uker', color: '#94a3b8' }, ticks: { color: '#94a3b8' }, grid: { color: '#334155' } },
+        y1: { position: 'right', beginAtZero: true, max: 100, title: { display: true, text: 'Andel (%)', color: '#94a3b8' }, ticks: { color: '#94a3b8', callback: v => v + ' %' }, grid: { drawOnChartArea: false } },
+      } }
   });
 
   // Seasons chart — computed dynamically from current season ranges + weekly log

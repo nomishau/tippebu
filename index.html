@@ -245,7 +245,7 @@ footer { text-align: center; padding: 2rem; color: var(--text-dim); font-size: 0
 @media (max-width: 640px), (max-height: 500px) {
   /* Prevent the page from scrolling horizontally — keeps the touch bound to the nav */
   html, body { overflow-x: hidden; }
-  header { padding: 0.5rem 0.75rem; overflow: hidden; }
+  header { padding: max(0.5rem, env(safe-area-inset-top)) max(0.75rem, env(safe-area-inset-right)) 0.5rem max(0.75rem, env(safe-area-inset-left)); overflow: hidden; }
   .header-inner { flex-direction: column; align-items: stretch; gap: 0.5rem; min-width: 0; }
   h1 { font-size: 1.1rem; }
 

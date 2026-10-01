@@ -375,6 +375,21 @@ footer { text-align: center; padding: 2rem; color: var(--text-dim); font-size: 0
 <section id="tab-dashboard" class="active">
   <h2>Dashboard</h2>
 
+  <div class="card" id="announcement-card" style="display:none; border-color: var(--gold); background: rgba(251,191,36,0.08);">
+    <div class="flex-between mb-1">
+      <h3>📢 Kunngjøring</h3>
+      <div class="flex" id="announcement-admin-actions" style="display:none; gap:0.4rem;">
+        <button class="btn small secondary" id="edit-announcement-btn">✎ Rediger</button>
+        <button class="btn small danger" id="clear-announcement-btn">🗑 Fjern</button>
+      </div>
+    </div>
+    <div id="announcement-content"></div>
+    <div class="muted" id="announcement-meta" style="font-size:0.75rem; margin-top:0.5rem;"></div>
+  </div>
+  <div class="card" id="announcement-add-card" style="display:none;">
+    <button class="btn small" id="add-announcement-btn">+ Legg til kunngjøring</button>
+  </div>
+
   <div class="card next-up" id="next-up-card">
     <h3>🎯 Denne uken</h3>
     <div id="next-up-content"></div>
@@ -1938,7 +1953,69 @@ document.addEventListener('click', e => {
 });
 
 // ---------- Dashboard ----------
+function renderAnnouncement() {
+  const card = document.getElementById('announcement-card');
+  const addCard = document.getElementById('announcement-add-card');
+  const adminActions = document.getElementById('announcement-admin-actions');
+  const a = DATA.announcement;
+  const admin = isAdmin();
+
+  if (a && a.text) {
+    card.style.display = '';
+    document.getElementById('announcement-content').innerHTML = htmlEsc(a.text).replace(/\n/g, '<br>');
+    const metaBits = [];
+    if (a.author) metaBits.push(`av ${htmlEsc(a.author)}`);
+    if (a.updatedAt) metaBits.push(new Date(a.updatedAt).toLocaleString('nb-NO'));
+    document.getElementById('announcement-meta').textContent = metaBits.join(' · ');
+    adminActions.style.display = admin ? '' : 'none';
+    addCard.style.display = 'none';
+  } else {
+    card.style.display = 'none';
+    addCard.style.display = admin ? '' : 'none';
+  }
+}
+
+function editAnnouncement() {
+  if (!requireAdmin()) return;
+  const a = DATA.announcement || {};
+  showModal(`
+    <h3>Kunngjøring</h3>
+    <div class="form-grid">
+      <label style="grid-column:1/-1">Melding <textarea id="an-text" rows="4">${htmlEsc(a.text || '')}</textarea></label>
+    </div>
+    <div class="modal-actions">
+      <button class="btn secondary" onclick="closeModal()">Avbryt</button>
+      <button class="btn" onclick="saveAnnouncement()">Lagre</button>
+    </div>
+  `);
+}
+
+function saveAnnouncement() {
+  if (!requireAdmin()) return;
+  const text = document.getElementById('an-text').value.trim();
+  if (!text) { toast('Skriv inn en melding', true); return; }
+  DATA.announcement = { text, updatedAt: new Date().toISOString(), author: currentUsername || null };
+  saveData();
+  closeModal();
+  renderAnnouncement();
+  toast('Kunngjøring lagret');
+}
+
+function clearAnnouncement() {
+  if (!requireAdmin()) return;
+  if (!confirm('Fjerne kunngjøringen?')) return;
+  DATA.announcement = null;
+  saveData();
+  renderAnnouncement();
+  toast('Kunngjøring fjernet');
+}
+
+document.getElementById('add-announcement-btn').addEventListener('click', editAnnouncement);
+document.getElementById('edit-announcement-btn').addEventListener('click', editAnnouncement);
+document.getElementById('clear-announcement-btn').addEventListener('click', clearAnnouncement);
+
 function renderDashboard() {
+  renderAnnouncement();
   const settled = settledWeeks();
   const last = settled[settled.length - 1] || {};
 

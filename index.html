@@ -769,12 +769,15 @@ footer { text-align: center; padding: 2rem; color: var(--text-dim); font-size: 0
       <h3>Turer</h3>
       <button class="btn small" id="add-expense-btn">+ Legg til</button>
     </div>
-    <table>
-      <thead>
-        <tr><th>År</th><th>Tur / utgift</th><th class="right">Sum (kr)</th><th></th></tr>
-      </thead>
-      <tbody id="expenses-tbody"></tbody>
-    </table>
+    <p class="muted mb-1">Klikk på en celle for å markere om personen deltok på turen. ✓ = deltok · ✗ = deltok ikke. Dette brukes til å beregne hvor mye hver enkelt har igjen (de som ikke deltok beholder sin andel av potten).</p>
+    <div style="overflow-x:auto;">
+      <table>
+        <thead>
+          <tr id="expenses-thead-row"><th>År</th><th>Tur / utgift</th><th class="right">Sum (kr)</th><th></th></tr>
+        </thead>
+        <tbody id="expenses-tbody"></tbody>
+      </table>
+    </div>
   </div>
 </section>
 
@@ -3723,6 +3726,30 @@ document.addEventListener('change', e => {
 document.getElementById('add-special-btn').addEventListener('click', addNewEvent);
 
 // ---------- Expenses ----------
+// Attendance (deltakere) on an expense/trip: exp.deltakere is a map of player -> boolean.
+// A player not present in the map is assumed to have attended (true), so old trips
+// (recorded before this feature existed) keep behaving exactly as before until edited.
+function isAttending(exp, player) {
+  if (!exp.deltakere || !(player in exp.deltakere)) return true;
+  return !!exp.deltakere[player];
+}
+
+function expenseAttendeeCount(exp, players) {
+  const total = players.length;
+  const attended = players.filter(p => isAttending(exp, p)).length;
+  return { attended, total };
+}
+
+function toggleExpenseAttendance(idx, player) {
+  if (!requireAdmin()) return;
+  const exp = DATA.expenses[idx];
+  if (!exp.deltakere) exp.deltakere = {};
+  const current = isAttending(exp, player);
+  exp.deltakere[player] = !current;
+  saveData();
+  renderExpenses();
+}
+
 function renderExpenses() {
   const totalExp = DATA.expenses.reduce((s,e) => s + (e.sum||0), 0);
   const settled = settledWeeks();
@@ -3737,17 +3764,40 @@ function renderExpenses() {
     { l: 'Antall turer', v: DATA.expenses.length, c: '' },
   ].map(k => `<div class="kpi ${k.c}"><div class="label">${k.l}</div><div class="value">${k.v}</div></div>`).join('');
 
-  document.getElementById('expenses-tbody').innerHTML = DATA.expenses.map((e, i) => `
+  const players = uniquePlayers();
+
+  document.getElementById('expenses-thead-row').innerHTML = `
+    <th>År</th>
+    <th>Tur / utgift</th>
+    ${players.map(p => `<th class="center" style="min-width:46px;">${htmlEsc(p)}</th>`).join('')}
+    <th class="center">Deltok</th>
+    <th class="right">Sum (kr)</th>
+    <th></th>
+  `;
+
+  document.getElementById('expenses-tbody').innerHTML = DATA.expenses.map((e, i) => {
+    const attendCells = players.map(p => {
+      const attending = isAttending(e, p);
+      return attending
+        ? `<td class="center" style="cursor:pointer; color:var(--green); font-weight:700;" title="${htmlEsc(p)} deltok — klikk for å endre" onclick="toggleExpenseAttendance(${i}, '${p}')">✓</td>`
+        : `<td class="center" style="cursor:pointer; color:var(--red); font-weight:700; background:rgba(248,113,113,0.05);" title="${htmlEsc(p)} deltok ikke — klikk for å endre" onclick="toggleExpenseAttendance(${i}, '${p}')">✗</td>`;
+    }).join('');
+    const ac = expenseAttendeeCount(e, players);
+    const tagCls = ac.attended === ac.total && ac.total > 0 ? 'green' : (ac.attended > 0 ? 'gold' : 'red');
+    return `
     <tr>
       <td>${e.aar}</td>
       <td>${htmlEsc(e.utgift || '')}</td>
+      ${attendCells}
+      <td class="num"><span class="tag ${tagCls}">${ac.attended}/${ac.total || '-'}</span></td>
       <td class="num negative">${fmtKr(e.sum)}</td>
       <td class="actions-cell">
         <button class="btn small secondary" onclick="editExpense(${i})">✎</button>
         <button class="btn small danger" onclick="deleteExpense(${i})">🗑</button>
       </td>
     </tr>
-  `).join('');
+  `;
+  }).join('');
 }
 
 function editExpense(idx) {
@@ -3768,10 +3818,12 @@ function editExpense(idx) {
 
 function saveExpense(idx) {
   if (!requireAdmin()) return;
+  const existing = idx >= 0 ? DATA.expenses[idx] : null;
   const exp = {
     aar: parseInt(document.getElementById('exp-aar').value),
     utgift: document.getElementById('exp-desc').value,
     sum: parseFloat(document.getElementById('exp-sum').value) || 0,
+    deltakere: existing && existing.deltakere ? existing.deltakere : {},
   };
   if (idx >= 0) DATA.expenses[idx] = exp; else DATA.expenses.push(exp);
   DATA.expenses.sort((a,b) => (a.aar||0) - (b.aar||0));

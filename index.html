@@ -359,6 +359,7 @@ footer { text-align: center; padding: 2rem; color: var(--text-dim); font-size: 0
       <button data-tab="seasons">Sesonger</button>
       <button data-tab="special">Spesielle hendelser</button>
       <button data-tab="expenses">Utgifter</button>
+      <button data-tab="spillerkonto">Spillerkonto</button>
       <button data-tab="data">Data</button>
     </nav>
     <div class="header-actions">
@@ -776,6 +777,32 @@ footer { text-align: center; padding: 2rem; color: var(--text-dim); font-size: 0
           <tr id="expenses-thead-row"><th>År</th><th>Tur / utgift</th><th class="right">Sum (kr)</th><th></th></tr>
         </thead>
         <tbody id="expenses-tbody"></tbody>
+      </table>
+    </div>
+  </div>
+</section>
+
+<!-- SPILLERKONTO (admin only) -->
+<section id="tab-spillerkonto">
+  <h2>Spillerkonto</h2>
+  <p class="muted mb-1">Viser hver spillers andel av sesongens nettoresultat (gevinst minus innsats), fordelt etter antall spilte uker. Dersom en spiller deltok på årets tur, trekkes hans andel av turkostnaden fra saldoen. Gjelder fra og med Sesong 6.</p>
+  <div class="controls">
+    <select id="spillerkonto-season"></select>
+  </div>
+  <div class="kpi-grid" id="spillerkonto-kpis"></div>
+  <div class="card">
+    <div class="table-wrap">
+      <table>
+        <thead>
+          <tr>
+            <th>Spiller</th>
+            <th class="right">Uker spilt</th>
+            <th class="right">Andel av pott</th>
+            <th class="right">Trukket (tur)</th>
+            <th class="right">Netto saldo</th>
+          </tr>
+        </thead>
+        <tbody id="spillerkonto-tbody"></tbody>
       </table>
     </div>
   </div>
@@ -1227,6 +1254,7 @@ function goTab(tab) {
   if (tab === 'charts') renderCharts();
   if (tab === 'records') renderRecords();
   if (tab === 'seasons') renderSeasons();
+  if (tab === 'spillerkonto') renderSpillerkonto();
   if (tab === 'special') renderSpecial();
   if (tab === 'expenses') renderExpenses();
   if (tab === 'data') renderDataTab();
@@ -3843,6 +3871,152 @@ function deleteExpense(idx) {
 }
 
 document.getElementById('add-expense-btn').addEventListener('click', () => editExpense(-1));
+
+// ---------- Spillerkonto (admin only) ----------
+// Feature applies from Sesong 6 onward. Each season's net result (winnings minus
+// stake, i.e. the change in pengerIBua across the season) is distributed to players
+// in proportion to how many weeks they paid/played that season. If a player attended
+// a yearly trip, their even share of that trip's cost is deducted from their balance.
+const SPILLERKONTO_FROM_SEASON = 6;
+
+function seasonNumber(season) {
+  const m = /Sesong\s+(\d+)/i.exec((season && season.navn) || '');
+  return m ? parseInt(m[1], 10) : null;
+}
+
+function spillerkontoEligibleSeasons() {
+  return DATA.seasons
+    .filter(s => (seasonNumber(s) || 0) >= SPILLERKONTO_FROM_SEASON)
+    .sort((a, b) => ywKey(a.startYear, a.startUke) - ywKey(b.startYear, b.startUke));
+}
+
+// Net change in pengerIBua across the season's settled weeks — the season's
+// accumulated winnings minus stake.
+function seasonPotTotal(season) {
+  const allSettled = settledWeeks();
+  const seasonWeeks = allSettled.filter(w => weekInSeason(w, season));
+  if (!seasonWeeks.length) return 0;
+  const lastWeek = seasonWeeks[seasonWeeks.length - 1];
+  const firstIdx = allSettled.indexOf(seasonWeeks[0]);
+  const prevWeek = firstIdx > 0 ? allSettled[firstIdx - 1] : null;
+  const startBua = prevWeek ? (prevWeek.pengerIBua || 0) : 0;
+  const endBua = lastWeek.pengerIBua || 0;
+  return endBua - startBua;
+}
+
+// Attribute a trip (by its year) to the season that was active around the
+// middle of that calendar year — avoids double-counting trips in seasons
+// that happen to share a boundary year.
+function seasonForYear(year) {
+  const probeKey = ywKey(year, 26);
+  return DATA.seasons.find(s => probeKey >= ywKey(s.startYear, s.startUke) && probeKey <= ywKey(s.endYear, s.endUke));
+}
+
+function tripsForSeason(season) {
+  return DATA.expenses.filter(e => {
+    const s = seasonForYear(e.aar);
+    return s && s.navn === season.navn;
+  });
+}
+
+function spillerkontoCompute(season) {
+  const players = uniquePlayers();
+  const seasonWeeks = settledWeeks().filter(w => weekInSeason(w, season));
+  const potTotal = seasonPotTotal(season);
+
+  const attendedWeeks = {};
+  players.forEach(p => { attendedWeeks[p] = 0; });
+  seasonWeeks.forEach(w => {
+    if (!w.paid) return;
+    players.forEach(p => { if (w.paid[p]) attendedWeeks[p]++; });
+  });
+  const totalPersonWeeks = players.reduce((s, p) => s + attendedWeeks[p], 0);
+
+  const share = {};
+  players.forEach(p => {
+    share[p] = totalPersonWeeks > 0 ? (attendedWeeks[p] / totalPersonWeeks) * potTotal : 0;
+  });
+
+  const tripDeduction = {};
+  players.forEach(p => { tripDeduction[p] = 0; });
+  const trips = tripsForSeason(season);
+  let totalTripsCost = 0;
+  trips.forEach(exp => {
+    totalTripsCost += exp.sum || 0;
+    const attendees = players.filter(p => isAttending(exp, p));
+    if (!attendees.length) return;
+    const perPerson = (exp.sum || 0) / attendees.length;
+    attendees.forEach(p => { tripDeduction[p] += perPerson; });
+  });
+
+  const rows = players.map(p => ({
+    tipper: p,
+    ukerSpilt: attendedWeeks[p],
+    andel: share[p],
+    trukket: tripDeduction[p],
+    netto: share[p] - tripDeduction[p],
+  })).sort((a, b) => b.netto - a.netto);
+
+  return { rows, potTotal, totalTripsCost, trips };
+}
+
+function populateSpillerkontoSeasons() {
+  const sel = document.getElementById('spillerkonto-season');
+  if (!sel) return;
+  const prev = sel.value;
+  sel.innerHTML = '';
+  const eligible = spillerkontoEligibleSeasons();
+  eligible.forEach(s => {
+    const idx = DATA.seasons.indexOf(s);
+    const o = document.createElement('option');
+    o.value = idx;
+    o.textContent = s.navn;
+    sel.appendChild(o);
+  });
+  if (prev && Array.from(sel.options).some(o => o.value === prev)) {
+    sel.value = prev;
+  } else if (eligible.length) {
+    // Default to the current season if eligible, otherwise the latest eligible one
+    const current = getCurrentSeason();
+    const currentIdx = current ? DATA.seasons.indexOf(current) : -1;
+    const hasCurrent = Array.from(sel.options).some(o => o.value === String(currentIdx));
+    sel.value = hasCurrent ? String(currentIdx) : sel.options[sel.options.length - 1].value;
+  }
+}
+
+function renderSpillerkonto() {
+  if (!isAdmin()) return;
+  const sel = document.getElementById('spillerkonto-season');
+  if (sel.options.length === 0) populateSpillerkontoSeasons();
+  const idx = parseInt(sel.value, 10);
+  const season = DATA.seasons[idx];
+
+  if (!season) {
+    document.getElementById('spillerkonto-kpis').innerHTML = '';
+    document.getElementById('spillerkonto-tbody').innerHTML = '<tr><td colspan="5" class="muted">Ingen kvalifiserte sesonger ennå (gjelder fra og med Sesong 6).</td></tr>';
+    return;
+  }
+
+  const { rows, potTotal, totalTripsCost } = spillerkontoCompute(season);
+
+  document.getElementById('spillerkonto-kpis').innerHTML = [
+    { l: 'Sesongens nettoresultat', v: fmtKr(potTotal), c: potTotal >= 0 ? 'positive' : 'negative' },
+    { l: 'Sum turutgifter', v: fmtKr(totalTripsCost), c: 'negative' },
+    { l: 'Sum netto (alle spillere)', v: fmtKr(potTotal - totalTripsCost), c: (potTotal - totalTripsCost) >= 0 ? 'positive' : 'negative' },
+  ].map(k => `<div class="kpi ${k.c}"><div class="label">${k.l}</div><div class="value">${k.v}</div></div>`).join('');
+
+  document.getElementById('spillerkonto-tbody').innerHTML = rows.map(r => `
+    <tr>
+      <td>${htmlEsc(r.tipper)}</td>
+      <td class="num">${r.ukerSpilt}</td>
+      <td class="num">${fmtKr(r.andel)}</td>
+      <td class="num negative">${r.trukket ? '−' + fmtKr(r.trukket) : fmtKr(0)}</td>
+      <td class="num ${r.netto >= 0 ? 'positive' : 'negative'}"><strong>${fmtKr(r.netto)}</strong></td>
+    </tr>
+  `).join('');
+}
+
+document.getElementById('spillerkonto-season').addEventListener('change', renderSpillerkonto);
 
 // ---------- Data tab ----------
 function renderDataTab() {
